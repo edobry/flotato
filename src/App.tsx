@@ -29,7 +29,7 @@ interface GameState {
   flash: number;
 }
 
-export default function SuperHexagon() {
+export default function Flowtato() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<Phase>('start');
@@ -379,6 +379,22 @@ export default function SuperHexagon() {
     padding: 16,
   };
 
+  const creditStyle: CSSProperties = {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 18,
+    fontSize: 12,
+    lineHeight: 1.5,
+    opacity: 0.6,
+    pointerEvents: 'auto',
+  };
+
+  const linkStyle: CSSProperties = {
+    color: 'inherit',
+    textDecoration: 'underline',
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -405,12 +421,23 @@ export default function SuperHexagon() {
       />
       {phase === 'start' && !err && (
         <div style={overlayStyle}>
-          <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6 }}>HEXAGON</div>
+          <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6 }}>FLOWTATO</div>
           <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
             hold the left / right side of the screen
           </div>
           <div style={{ fontSize: 14, opacity: 0.85 }}>or use ← → / A D on a keyboard</div>
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>tap or press SPACE to begin</div>
+          <div style={creditStyle}>
+            inspired by Terry Cavanagh, creator of{' '}
+            <a href="https://superhexagon.com" target="_blank" rel="noreferrer" style={linkStyle}>
+              Super Hexagon
+            </a>{' '}
+            — music originally by{' '}
+            <a href="https://chipzel.bandcamp.com" target="_blank" rel="noreferrer" style={linkStyle}>
+              Chipzel
+            </a>
+            , go buy it
+          </div>
         </div>
       )}
       {phase === 'over' && !err && (
@@ -438,7 +465,7 @@ export default function SuperHexagon() {
             overflow: 'auto',
           }}
         >
-          {'The game hit a runtime error:\n\n' + err + '\n\nPaste this message back to me and I can fix the exact issue.'}
+          {'The game hit a runtime error:\n\n' + err + '\n\nReload to try again.'}
         </div>
       )}
     </div>
