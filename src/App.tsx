@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, type CSSProperties } from 'react';
 
 const TAU = Math.PI * 2;
 const SIDES = 6;
@@ -8,15 +8,36 @@ const PLAYER_R = HEX_R + 16;
 const PLAYER_SPEED = 6.8; // radians per second
 const HALF_W = 6;         // player collision half-thickness in px
 
+type Phase = 'start' | 'playing' | 'over';
+
+interface Wall {
+  sec: number;
+  dist: number;
+  thick: number;
+}
+
+interface GameState {
+  time: number;
+  hue: number;
+  camA: number;
+  camSpin: number;
+  spinT: number;
+  pulseT: number;
+  playerA: number;
+  walls: Wall[];
+  dead: boolean;
+  flash: number;
+}
+
 export default function SuperHexagon() {
-  const wrapRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [phase, setPhase] = useState('start'); // start | playing | over
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [phase, setPhase] = useState<Phase>('start');
   const [finalTime, setFinalTime] = useState(0);
   const [bestTime, setBestTime] = useState(0);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const phaseRef = useRef('start');
+  const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
 
   useEffect(() => {
@@ -39,7 +60,7 @@ export default function SuperHexagon() {
 
     const input = { left: false, right: false };
 
-    const freshState = () => ({
+    const freshState = (): GameState => ({
       time: 0,
       hue: 195,
       camA: Math.random() * TAU,
@@ -75,7 +96,7 @@ export default function SuperHexagon() {
     };
 
     // ---------- input ----------
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const c = e.code || '';
       if (c === 'ArrowLeft' || c === 'KeyA' || e.key === 'a' || e.key === 'A') {
         input.left = true;
@@ -88,15 +109,13 @@ export default function SuperHexagon() {
         e.preventDefault();
       }
     };
-    const onKeyUp = (e) => {
+    const onKeyUp = (e: KeyboardEvent) => {
       const c = e.code || '';
       if (c === 'ArrowLeft' || c === 'KeyA' || e.key === 'a' || e.key === 'A') input.left = false;
       if (c === 'ArrowRight' || c === 'KeyD' || e.key === 'd' || e.key === 'D') input.right = false;
     };
-    const onPointerDown = (e) => {
-      if (wrapRef.current && wrapRef.current.focus) {
-        try { wrapRef.current.focus(); } catch (e2) {}
-      }
+    const onPointerDown = (e: PointerEvent) => {
+      try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
       if (phaseRef.current !== 'playing') start();
       const rect = canvas.getBoundingClientRect();
       if (e.clientX - rect.left < rect.width / 2) input.left = true;
@@ -114,12 +133,12 @@ export default function SuperHexagon() {
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
 
-    try { wrapRef.current && wrapRef.current.focus(); } catch (e2) {}
+    try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
 
     // ---------- wall patterns (always leave a gap) ----------
-    const spawnRing = (R) => {
+    const spawnRing = (R: number) => {
       const gaps = s.time < 8 || Math.random() < 0.55 ? 2 : 1;
-      const open = {};
+      const open: Record<number, boolean> = {};
       let n = 0;
       while (n < gaps) {
         const g = Math.floor(Math.random() * SIDES);
@@ -130,14 +149,14 @@ export default function SuperHexagon() {
         if (!open[i]) s.walls.push({ sec: i, dist: R, thick });
       }
     };
-    const spawnChunk = (R) => {
+    const spawnChunk = (R: number) => {
       const len = Math.random() < 0.5 ? 3 : 4;
       const st0 = Math.floor(Math.random() * SIDES);
       for (let i = 0; i < len; i++) {
         s.walls.push({ sec: (st0 + i) % SIDES, dist: R, thick: 55 });
       }
     };
-    const spawnSpiral = (R) => {
+    const spawnSpiral = (R: number) => {
       const dir = Math.random() < 0.5 ? 1 : -1;
       const st0 = Math.floor(Math.random() * SIDES);
       const step = 95 + Math.random() * 40;
@@ -148,7 +167,7 @@ export default function SuperHexagon() {
     };
 
     // ---------- update ----------
-    const update = (dt) => {
+    const update = (dt: number) => {
       s.pulseT += dt;
       s.hue = (s.hue + dt * 16) % 360;
       if (s.flash > 0) s.flash -= dt;
@@ -171,7 +190,7 @@ export default function SuperHexagon() {
 
       // walls move inward
       const speed = 170 + Math.min(240, s.time * 7);
-      const kept = [];
+      const kept: Wall[] = [];
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         wl.dist -= speed * dt;
@@ -311,7 +330,7 @@ export default function SuperHexagon() {
     };
 
     // ---------- main loop with crash reporting ----------
-    const loop = (now) => {
+    const loop = (now: number) => {
       if (stopped) return;
       try {
         syncSize();
@@ -322,7 +341,7 @@ export default function SuperHexagon() {
         draw();
       } catch (ex) {
         stopped = true;
-        const msg = ex && (ex.stack || ex.message) ? String(ex.stack || ex.message) : String(ex);
+        const msg = ex instanceof Error ? ex.stack || ex.message : String(ex);
         setErr(msg);
         return;
       }
@@ -342,7 +361,7 @@ export default function SuperHexagon() {
     };
   }, []);
 
-  const overlayStyle = {
+  const overlayStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
     left: 0,
