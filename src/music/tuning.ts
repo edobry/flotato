@@ -58,7 +58,7 @@ export const DEFAULT_TUNING: Tuning = {
 export const SCALE_NAMES: ScaleName[] = ['wholeTone', 'minorHexatonic', 'majorPentatonic'];
 export const DEATH_MODES: Tuning['deathMode'][] = ['stop', 'drone'];
 
-const STORAGE_KEY = 'flowtato.tuning';
+const STORAGE_KEY = 'flotato.tuning';
 
 /** Coerce one raw value to the type of its default; undefined when it does not fit. */
 function coerce<K extends keyof Tuning>(key: K, raw: unknown): Tuning[K] | undefined {

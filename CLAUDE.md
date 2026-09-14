@@ -1,8 +1,8 @@
-# Flowtato
+# Flotato
 
 Hexagon-like reflex game (Super Hexagon genre), free web game for friends. The
 handoff brief with settled decisions, rationale, and the task list lives in
-Notion: https://app.notion.com/p/dobry/Flowtato-3da937f03cb4817183e4cb7592ccbbf0
+Notion: https://app.notion.com/p/dobry/Flotato-3da937f03cb4817183e4cb7592ccbbf0
 Read it before starting a new task.
 
 ## Stack
@@ -11,11 +11,11 @@ Read it before starting a new task.
 - Single component in `src/App.tsx`. Game state lives in refs, not React
   state; one requestAnimationFrame loop created once.
 - Deploys to GitHub Pages from `main` via `.github/workflows/deploy.yml`.
-  Vite `base` is `/flowtato/`.
+  Vite `base` is `/flotato/`.
 
 ## Settled decisions (do not relitigate; details in the Notion brief)
 
-- Name is Flowtato. Played straight: austere neon visuals, serious synths. The
+- Name is Flotato. Played straight: austere neon visuals, serious synths. The
   potato never shows on the surface (hidden easter-egg mode only).
 - Music: procedural synthesis in-browser via Tone.js, deeply coupled to game
   state. No Chipzel tracks, no AI-generated music.
