@@ -57,7 +57,7 @@ export function createVoices(): Voices {
   const arpFilter = new Tone.Filter({ type: 'lowpass', frequency: 7000, rolloff: -24, Q: 1.5 });
   const arp = new Tone.PolySynth({
     voice: Tone.Synth,
-    maxPolyphony: 8,
+    maxPolyphony: 16,
     volume: -14,
     options: {
       oscillator: { type: 'square' },
@@ -69,7 +69,7 @@ export function createVoices(): Voices {
   const padPan = new Tone.AutoPanner({ frequency: 0.12, depth: 0 }).connect(master).start();
   const pad = new Tone.PolySynth({
     voice: Tone.FMSynth,
-    maxPolyphony: 6,
+    maxPolyphony: 12,
     volume: -20,
     options: {
       harmonicity: 2,
