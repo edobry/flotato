@@ -48,7 +48,10 @@ const hatsPat: Pattern<string, Ctx> = withCtx((ctx) =>
   ctx.variant >= 3 ? every(4, (q) => fast(2, q), hatPat) : hatPat,
 );
 
-export function createEngineImpl(initial: Tuning): MusicEngine {
+export function createEngineImpl(initial: Tuning, audio: AudioContext | null = null): MusicEngine {
+  // Adopt the context the facade created inside the user gesture, and drop
+  // the one Tone made at import time.
+  if (audio) Tone.setContext(audio, true);
   let tuning = initial;
   const state: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
   const ctx: Ctx = { s: state, tuning, variant: 0 };
@@ -161,7 +164,7 @@ export function createEngineImpl(initial: Tuning): MusicEngine {
         }
       })
       .catch(() => {
-        /* the next gesture will try again */
+        /* resume was refused; ready stays false and the next gesture retries */
       });
   }
 
@@ -230,7 +233,7 @@ export function createEngineImpl(initial: Tuning): MusicEngine {
     const v = voices;
     if (!v || !running || !tuning.milestones) return;
     const t = tr();
-    const when = t.state === 'started' ? t.nextSubdivision('16n') : Tone.now();
+    const when = t.nextSubdivision('16n');
     const sc = scale();
     v.sting.triggerAttackRelease(degreeToHz(sc, 0, 3), 0.15, when, 0.3);
     v.sting.triggerAttackRelease(degreeToHz(sc, 3, 3), 0.25, when + 0.12, 0.35);

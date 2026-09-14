@@ -3,6 +3,11 @@
 // if it happens before a user gesture. So the implementation (and Tone with
 // it) is loaded dynamically from inside unlock(), which the game calls from
 // its start gesture. Until it lands, calls are queued or dropped harmlessly.
+//
+// Autoplay policy is satisfied synchronously: the first unlock() creates and
+// resumes a native AudioContext inside the gesture's own call stack, and the
+// implementation adopts that context when it loads. Every later gesture is
+// forwarded to the implementation, so a rejected resume can always be retried.
 
 import type { Tuning } from './tuning';
 
@@ -42,29 +47,56 @@ export interface MusicEngine {
   dispose(): void;
 }
 
+function createNativeContext(): AudioContext | null {
+  try {
+    const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+    const Ctor = w.AudioContext ?? w.webkitAudioContext;
+    return Ctor ? new Ctor() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createMusicEngine(initial: Tuning): MusicEngine {
   let impl: MusicEngine | null = null;
+  let audio: AudioContext | null = null;
   let loading = false;
   let disposed = false;
+  let pendingUnlock = false;
   let pendingStart = false;
   let tuning = initial;
   let muted = false;
   const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
 
   function unlock() {
-    if (impl || loading || disposed) return;
+    if (disposed) return;
+    if (impl) {
+      impl.unlock();
+      return;
+    }
+    // Inside the gesture: create and resume the context now, so the
+    // activation is consumed synchronously rather than after an async import.
+    if (!audio) audio = createNativeContext();
+    audio?.resume().catch(() => {
+      /* the next gesture retries through impl.unlock() */
+    });
+    pendingUnlock = true;
+    if (loading) return;
     loading = true;
     import('./engine-impl')
       .then(({ createEngineImpl }) => {
-        const e = createEngineImpl(tuning);
+        const e = createEngineImpl(tuning, audio);
         if (disposed) {
           e.dispose();
           return;
         }
         e.setMuted(muted);
         e.setSnapshot(snap);
-        e.unlock();
         impl = e;
+        if (pendingUnlock) {
+          pendingUnlock = false;
+          e.unlock();
+        }
         if (pendingStart) {
           pendingStart = false;
           e.start();
@@ -116,6 +148,10 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
       disposed = true;
       impl?.dispose();
       impl = null;
+      audio?.close().catch(() => {
+        /* already closed */
+      });
+      audio = null;
     },
   };
 }

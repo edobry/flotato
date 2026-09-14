@@ -73,6 +73,8 @@ describe('mini-notation', () => {
   it('rejects malformed input', () => {
     expect(() => mini('a [b')).toThrow();
     expect(() => mini('a*0')).toThrow();
+    expect(() => mini('a*-2')).toThrow();
+    expect(values(mini('-2 0'), 0, 1)).toEqual(['-2', '0']);
   });
 });
 

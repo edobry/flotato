@@ -8,6 +8,9 @@
 //   a?           drop the step half the time (deterministic per onset)
 //   a!           repeat the step once more
 //   a, b         stack (inside brackets or at the top level)
+//
+// Words may carry a leading '-' so negative scale degrees ("-2 0 2") parse as
+// words; the *n and /n factors are speeds and must be positive numbers.
 
 import { type Pattern, cat, degradeBy, fast, pure, seq, silence, slow, stack } from './pattern';
 
