@@ -1,4 +1,7 @@
 import { useRef, useEffect, useState, type CSSProperties } from 'react';
+import { createMusicEngine, type MusicEngine, type Snapshot, type WallKind } from './music/engine';
+import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from './music/tuning';
+import TuningOverlay from './TuningOverlay';
 
 const TAU = Math.PI * 2;
 const SIDES = 6;
@@ -7,6 +10,9 @@ const HEX_R = 55;
 const PLAYER_R = HEX_R + 16;
 const PLAYER_SPEED = 6.8; // radians per second
 const HALF_W = 6;         // player collision half-thickness in px
+const MILESTONE_S = 10;   // seconds between musical milestones
+const DANGER_RANGE = 250; // px over which lane danger ramps from 0 to 1
+const MUTED_KEY = 'flowtato.muted';
 
 type Phase = 'start' | 'playing' | 'over';
 
@@ -29,6 +35,35 @@ interface GameState {
   flash: number;
 }
 
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/** Seconds for a wall to travel `dist` px starting at survival time t0, given wall speed 170 + min(240, 7t). */
+function travelTime(dist: number, t0: number): number {
+  const T_SAT = 240 / 7;
+  if (t0 >= T_SAT) return dist / 410;
+  const k = 170 * t0 + 3.5 * t0 * t0 + dist;
+  const t = (-170 + Math.sqrt(170 * 170 + 14 * k)) / 7;
+  if (t <= T_SAT) return t - t0;
+  const covered = 170 * (T_SAT - t0) + 3.5 * (T_SAT * T_SAT - t0 * t0);
+  return T_SAT - t0 + (dist - covered) / 410;
+}
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function tuningRequested(): boolean {
+  try {
+    return new URLSearchParams(location.search).has('tune');
+  } catch {
+    return false;
+  }
+}
+
 export default function Flowtato() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,13 +71,34 @@ export default function Flowtato() {
   const [finalTime, setFinalTime] = useState(0);
   const [bestTime, setBestTime] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [muted, setMuted] = useState(loadMuted);
+  const [tuning, setTuning] = useState<Tuning>(loadTuning);
+  const [showTuning, setShowTuning] = useState(tuningRequested);
 
   const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
+  const musicRef = useRef<MusicEngine | null>(null);
+  const tuningRef = useRef(tuning);
+  const mutedRef = useRef(muted);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    tuningRef.current = tuning;
+    musicRef.current?.setTuning(tuning);
+  }, [tuning]);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    musicRef.current?.setMuted(muted);
+    try {
+      localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+  }, [muted]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,6 +108,10 @@ export default function Flowtato() {
       setErr('Canvas 2D context not available in this environment.');
       return;
     }
+
+    const music = createMusicEngine(tuningRef.current);
+    musicRef.current = music;
+    music.setMuted(mutedRef.current);
 
     let raf = 0;
     let stopped = false;
@@ -75,10 +135,18 @@ export default function Flowtato() {
 
     let s = freshState();
 
+    // What the music engine sees. One object, rewritten every frame.
+    const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
+    let nextMilestone = MILESTONE_S;
+    let dangerPeakT = -1;
+
     const start = () => {
       s = freshState();
+      nextMilestone = MILESTONE_S;
+      dangerPeakT = -1;
       setFinalTime(0);
       setPhase('playing');
+      music.start();
     };
 
     const syncSize = () => {
@@ -96,7 +164,12 @@ export default function Flowtato() {
     };
 
     // ---------- input ----------
+    const isFormTarget = (e: Event) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON';
+    };
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isFormTarget(e)) return;
       const c = e.code || '';
       if (c === 'ArrowLeft' || c === 'KeyA' || e.key === 'a' || e.key === 'A') {
         input.left = true;
@@ -105,8 +178,13 @@ export default function Flowtato() {
         input.right = true;
         e.preventDefault();
       } else if (c === 'Space' || c === 'Enter' || e.key === ' ') {
+        music.unlock();
         if (phaseRef.current !== 'playing') start();
         e.preventDefault();
+      } else if (c === 'KeyM') {
+        setMuted((m) => !m);
+      } else if (c === 'KeyT') {
+        setShowTuning((v) => !v);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -116,6 +194,7 @@ export default function Flowtato() {
     };
     const onPointerDown = (e: PointerEvent) => {
       try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
+      music.unlock();
       if (phaseRef.current !== 'playing') start();
       const rect = canvas.getBoundingClientRect();
       if (e.clientX - rect.left < rect.width / 2) input.left = true;
@@ -136,6 +215,9 @@ export default function Flowtato() {
     try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
 
     // ---------- wall patterns (always leave a gap) ----------
+    const announce = (kind: WallKind, R: number) => {
+      music.spawn(kind, s.time + travelTime(R - PLAYER_R, s.time));
+    };
     const spawnRing = (R: number) => {
       const gaps = s.time < 8 || Math.random() < 0.55 ? 2 : 1;
       const open: Record<number, boolean> = {};
@@ -148,6 +230,7 @@ export default function Flowtato() {
       for (let i = 0; i < SIDES; i++) {
         if (!open[i]) s.walls.push({ sec: i, dist: R, thick });
       }
+      announce('ring', R);
     };
     const spawnChunk = (R: number) => {
       const len = Math.random() < 0.5 ? 3 : 4;
@@ -155,6 +238,7 @@ export default function Flowtato() {
       for (let i = 0; i < len; i++) {
         s.walls.push({ sec: (st0 + i) % SIDES, dist: R, thick: 55 });
       }
+      announce('chunk', R);
     };
     const spawnSpiral = (R: number) => {
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -164,6 +248,7 @@ export default function Flowtato() {
         const sec = (((st0 + dir * i) % SIDES) + SIDES) % SIDES;
         s.walls.push({ sec, dist: R + i * step, thick: 30 });
       }
+      announce('spiral', R);
     };
 
     // ---------- update ----------
@@ -184,6 +269,10 @@ export default function Flowtato() {
       if (phaseRef.current !== 'playing' || s.dead) return;
 
       s.time += dt;
+      if (s.time >= nextMilestone) {
+        music.milestone(Math.round(nextMilestone / MILESTONE_S));
+        nextMilestone += MILESTONE_S;
+      }
 
       if (input.left) s.playerA -= PLAYER_SPEED * dt;
       if (input.right) s.playerA += PLAYER_SPEED * dt;
@@ -213,9 +302,36 @@ export default function Flowtato() {
         else spawnSpiral(spawnR);
       }
 
-      // collision
+      // where the player is, and how close the walls are (lane and overall)
       const a = ((s.playerA % TAU) + TAU) % TAU;
       const sec = Math.floor(a / SECTOR) % SIDES;
+      let laneD = Infinity;
+      let anyD = Infinity;
+      for (let i = 0; i < s.walls.length; i++) {
+        const wl = s.walls[i];
+        const d = wl.dist - PLAYER_R;
+        if (d + wl.thick < -HALF_W) continue; // already past the player
+        if (wl.sec === sec && d < laneD) laneD = d;
+        if (d < anyD) anyD = d;
+      }
+      const danger = laneD === Infinity ? 0 : clamp01(1 - laneD / DANGER_RANGE);
+      const pressure = anyD === Infinity ? 0 : clamp01(1 - anyD / DANGER_RANGE);
+      if (danger > 0.6) {
+        dangerPeakT = s.time;
+      } else if (danger < 0.15 && dangerPeakT >= 0) {
+        if (s.time - dangerPeakT < 0.35) music.thread();
+        dangerPeakT = -1;
+      }
+      snap.t = s.time;
+      snap.danger = danger;
+      snap.pressure = pressure;
+      snap.sector = sec;
+      snap.rotDir = input.left === input.right ? 0 : input.left ? -1 : 1;
+      snap.camSpin = s.camSpin;
+      snap.playing = true;
+      music.setSnapshot(snap);
+
+      // collision
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         if (
@@ -225,7 +341,13 @@ export default function Flowtato() {
         ) {
           s.dead = true;
           s.flash = 0.3;
-          if (s.time > bestRef.current) bestRef.current = s.time;
+          if (s.time > bestRef.current) {
+            bestRef.current = s.time;
+            music.best();
+          }
+          music.die();
+          snap.playing = false;
+          music.setSnapshot(snap);
           setBestTime(bestRef.current);
           setFinalTime(s.time);
           setPhase('over');
@@ -240,7 +362,8 @@ export default function Flowtato() {
       ctx.clearRect(0, 0, w, h);
 
       const hue = Math.floor(s.hue);
-      const pulse = 1 + 0.022 * Math.sin(s.pulseT * 6.2);
+      const beat = tuningRef.current.beatPulse ? music.beatPhase() : -1;
+      const pulse = beat >= 0 ? 1 + 0.03 * Math.pow(1 - beat, 3) : 1 + 0.022 * Math.sin(s.pulseT * 6.2);
 
       ctx.save();
       ctx.translate(w / 2, h / 2);
@@ -318,6 +441,10 @@ export default function Flowtato() {
       }
 
       // HUD
+      ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillText(mutedRef.current ? 'MUTED  M' : 'M mute  T tune', 16, 30);
       if (phaseRef.current !== 'start') {
         ctx.font = '700 18px ui-monospace, Menlo, Consolas, monospace';
         ctx.textAlign = 'right';
@@ -358,6 +485,8 @@ export default function Flowtato() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
+      music.dispose();
+      if (musicRef.current === music) musicRef.current = null;
     };
   }, []);
 
@@ -447,6 +576,19 @@ export default function Flowtato() {
           <div style={{ fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>tap or press SPACE to retry</div>
         </div>
+      )}
+      {showTuning && !err && (
+        <TuningOverlay
+          tuning={tuning}
+          onChange={(t) => {
+            setTuning(t);
+            saveTuning(t);
+          }}
+          onReset={() => {
+            resetTuning();
+            setTuning({ ...DEFAULT_TUNING });
+          }}
+        />
       )}
       {err && (
         <div
