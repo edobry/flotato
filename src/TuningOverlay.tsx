@@ -11,7 +11,11 @@ const RANGES: Record<NumKey, [min: number, max: number, step: number]> = {
   tension: [0, 1, 0.05],
   reward: [0, 1, 0.05],
   volume: [-30, 0, 1],
+  dangerOnset: [0, 0.8, 0.05],
 };
+
+/** The first key of the player-observer group; a divider is drawn above it. */
+const OBSERVER_FROM: keyof Tuning = 'runStats';
 
 const ENUMS: Partial<Record<keyof Tuning, readonly string[]>> = {
   scale: SCALE_NAMES,
@@ -68,12 +72,21 @@ export default function TuningOverlay({ tuning, onChange, onReset }: Props) {
       {keys.map((key) => {
         const value = tuning[key];
         const label = <span style={{ opacity: 0.85 }}>{key}</span>;
+        const divider =
+          key === OBSERVER_FROM ? (
+            <div style={{ ...row, marginTop: 10, opacity: 0.6, borderTop: '1px solid rgba(255,255,255,0.18)', paddingTop: 6 }}>
+              <span>player observer</span>
+            </div>
+          ) : null;
         if (typeof value === 'boolean') {
           return (
-            <label key={key} style={row}>
-              {label}
-              <input type="checkbox" checked={value} onChange={(e) => set(key, e.target.checked)} />
-            </label>
+            <div key={key}>
+              {divider}
+              <label style={row}>
+                {label}
+                <input type="checkbox" checked={value} onChange={(e) => set(key, e.target.checked)} />
+              </label>
+            </div>
           );
         }
         if (typeof value === 'number') {

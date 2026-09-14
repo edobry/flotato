@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState, type CSSProperties } from 'react';
 import { createMusicEngine, type MusicEngine, type Snapshot, type WallKind } from './music/engine';
 import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from './music/tuning';
+import { createObserver, type Observer, type RunSummary } from './player/observer';
 import TuningOverlay from './TuningOverlay';
+import RunStats from './RunStats';
 
 const TAU = Math.PI * 2;
 const SIDES = 6;
@@ -70,6 +72,7 @@ export default function Flotato() {
   const [phase, setPhase] = useState<Phase>('start');
   const [finalTime, setFinalTime] = useState(0);
   const [bestTime, setBestTime] = useState(0);
+  const [run, setRun] = useState<RunSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [muted, setMuted] = useState(loadMuted);
   const [tuning, setTuning] = useState<Tuning>(loadTuning);
@@ -78,6 +81,7 @@ export default function Flotato() {
   const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
   const musicRef = useRef<MusicEngine | null>(null);
+  const observerRef = useRef<Observer | null>(null);
   const tuningRef = useRef(tuning);
   const mutedRef = useRef(muted);
 
@@ -88,6 +92,7 @@ export default function Flotato() {
   useEffect(() => {
     tuningRef.current = tuning;
     musicRef.current?.setTuning(tuning);
+    observerRef.current?.configure({ dangerOnset: tuning.dangerOnset });
   }, [tuning]);
 
   useEffect(() => {
@@ -112,6 +117,8 @@ export default function Flotato() {
     const music = createMusicEngine(tuningRef.current);
     musicRef.current = music;
     music.setMuted(mutedRef.current);
+    const observer = createObserver({ dangerOnset: tuningRef.current.dangerOnset });
+    observerRef.current = observer;
 
     let raf = 0;
     let stopped = false;
@@ -135,8 +142,9 @@ export default function Flotato() {
 
     let s = freshState();
 
-    // What the music engine sees. One object, rewritten every frame.
-    const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
+    // What the music engine and the player observer see. One object, rewritten every frame.
+    const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, lanes: [0, 0, 0, 0, 0, 0], rotDir: 0, camSpin: 0, playing: false };
+    const laneMin = new Array<number>(SIDES);
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
 
@@ -145,8 +153,10 @@ export default function Flotato() {
       nextMilestone = MILESTONE_S;
       dangerPeakT = -1;
       setFinalTime(0);
+      setRun(null);
       setPhase('playing');
       music.start();
+      observer.start();
     };
 
     const syncSize = () => {
@@ -302,19 +312,22 @@ export default function Flotato() {
         else spawnSpiral(spawnR);
       }
 
-      // where the player is, and how close the walls are (lane and overall)
+      // where the player is, and how close the walls are (per lane, this lane, and overall)
       const a = ((s.playerA % TAU) + TAU) % TAU;
       const sec = Math.floor(a / SECTOR) % SIDES;
-      let laneD = Infinity;
+      laneMin.fill(Infinity);
       let anyD = Infinity;
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         const d = wl.dist - PLAYER_R;
         if (d + wl.thick < -HALF_W) continue; // already past the player
-        if (wl.sec === sec && d < laneD) laneD = d;
+        if (d < laneMin[wl.sec]) laneMin[wl.sec] = d;
         if (d < anyD) anyD = d;
       }
-      const danger = laneD === Infinity ? 0 : clamp01(1 - laneD / DANGER_RANGE);
+      for (let i = 0; i < SIDES; i++) {
+        snap.lanes[i] = laneMin[i] === Infinity ? 0 : clamp01(1 - laneMin[i] / DANGER_RANGE);
+      }
+      const danger = snap.lanes[sec];
       const pressure = anyD === Infinity ? 0 : clamp01(1 - anyD / DANGER_RANGE);
       if (danger > 0.6) {
         dangerPeakT = s.time;
@@ -330,6 +343,7 @@ export default function Flotato() {
       snap.camSpin = s.camSpin;
       snap.playing = true;
       music.setSnapshot(snap);
+      observer.frame(snap, music.beatPhase());
 
       // collision
       for (let i = 0; i < s.walls.length; i++) {
@@ -348,6 +362,10 @@ export default function Flotato() {
           music.die();
           snap.playing = false;
           music.setSnapshot(snap);
+          const summary = observer.die();
+          // One line per run so playtest notes can be tied to the tuning that produced them.
+          console.info('[flotato] run', JSON.stringify({ ...summary, tuning: tuningRef.current }));
+          setRun(summary);
           setBestTime(bestRef.current);
           setFinalTime(s.time);
           setPhase('over');
@@ -487,6 +505,7 @@ export default function Flotato() {
       window.removeEventListener('pointercancel', onPointerUp);
       music.dispose();
       if (musicRef.current === music) musicRef.current = null;
+      if (observerRef.current === observer) observerRef.current = null;
     };
   }, []);
 
@@ -574,6 +593,7 @@ export default function Flotato() {
           <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: 5 }}>GAME OVER</div>
           <div style={{ marginTop: 12, fontSize: 18 }}>TIME {finalTime.toFixed(2)}</div>
           <div style={{ fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>
+          {run && tuning.runStats && <RunStats run={run} />}
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>tap or press SPACE to retry</div>
         </div>
       )}
