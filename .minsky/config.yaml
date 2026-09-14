@@ -1,0 +1,10 @@
+tasks:
+  backend: minsky
+persistence:
+  backend: postgres
+logger:
+  mode: auto
+  level: info
+  enableAgentLogs: false
+repository:
+  backend: local

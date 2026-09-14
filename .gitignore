@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .minsky/config.local.yaml
+
+# Minsky project identity (.minsky/config.yaml) is tracked; everything else the
+# tooling drops into .minsky/ or .cursor/ is local harness state, not project state.
+.minsky/*.jsonl
+.minsky/calibration-*.json
+.cursor/

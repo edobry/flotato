@@ -11,6 +11,9 @@ Music originally by [Chipzel](https://chipzel.bandcamp.com), go buy it. This is
 a free, non-commercial homage with original code, art, name, and (upcoming)
 procedurally synthesized music.
 
+Built with Claude Code from a Claude.ai prototype; the handoff brief and
+settled design decisions live in `CLAUDE.md` and the linked Notion page.
+
 ## Controls
 
 Hold the left or right half of the screen, or use the arrow keys / A and D.
