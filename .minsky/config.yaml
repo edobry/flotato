@@ -7,4 +7,10 @@ logger:
   level: info
   enableAgentLogs: false
 repository:
-  backend: local
+  backend: github
+  url: https://github.com/edobry/flowtato.git
+  github:
+    owner: edobry
+    repo: flowtato
+project:
+  slug: edobry/flowtato
