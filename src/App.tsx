@@ -12,7 +12,7 @@ const PLAYER_SPEED = 6.8; // radians per second
 const HALF_W = 6;         // player collision half-thickness in px
 const MILESTONE_S = 10;   // seconds between musical milestones
 const DANGER_RANGE = 250; // px over which lane danger ramps from 0 to 1
-const MUTED_KEY = 'flowtato.muted';
+const MUTED_KEY = 'flotato.muted';
 
 type Phase = 'start' | 'playing' | 'over';
 
@@ -64,7 +64,7 @@ function tuningRequested(): boolean {
   }
 }
 
-export default function Flowtato() {
+export default function Flotato() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<Phase>('start');
@@ -550,7 +550,7 @@ export default function Flowtato() {
       />
       {phase === 'start' && !err && (
         <div style={overlayStyle}>
-          <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6 }}>FLOWTATO</div>
+          <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6 }}>FLOTATO</div>
           <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
             hold the left / right side of the screen
           </div>

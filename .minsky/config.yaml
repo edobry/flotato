@@ -8,9 +8,9 @@ logger:
   enableAgentLogs: false
 repository:
   backend: github
-  url: https://github.com/edobry/flowtato.git
+  url: https://github.com/edobry/flotato.git
   github:
     owner: edobry
-    repo: flowtato
+    repo: flotato
 project:
-  slug: edobry/flowtato
+  slug: edobry/flotato

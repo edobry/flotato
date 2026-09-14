@@ -1,10 +1,10 @@
-# Flowtato
+# Flotato
 
 A hexagon-like reflex game, free on the web. Rotate a small triangle around a
 central hexagon while wall segments collapse inward; survive as long as you
 can. Survival time is the score.
 
-Play it: https://edobry.github.io/flowtato/
+Play it: https://edobry.github.io/flotato/
 
 Inspired by Terry Cavanagh, creator of [Super Hexagon](https://superhexagon.com).
 Music originally by [Chipzel](https://chipzel.bandcamp.com), go buy it. This is

@@ -5,8 +5,8 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Served from https://edobry.github.io/flowtato/ (GitHub Pages project site)
-  base: '/flowtato/',
+  // Served from https://edobry.github.io/flotato/ (GitHub Pages project site)
+  base: '/flotato/',
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
