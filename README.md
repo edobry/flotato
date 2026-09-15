@@ -76,6 +76,25 @@ Patterns are written in a small Tidal-style mini-notation (`src/music/mini.ts`)
 over a pure pattern core (`src/music/pattern.ts`) whose query model matches
 Strudel's, so the sequencing can grow or be swapped later.
 
+## The board
+
+Each run is posted to a small backend and shown on a board meant for a
+projector: https://edobry.github.io/flotato/board/ has a QR code for the play
+URL, the top ten of the last twelve hours, a feed of what just happened, and
+the room's numbers (runs, players, median reaction latency, median beat R,
+death classes). The game-over screen shows your rank for the run. Identity is
+a three-letter tag typed once on the start screen and kept in local storage,
+plus an anonymous per-device id; nothing else leaves the phone. The `telemetry`
+knob turns posting off; a dev server never posts unless opened with
+`?tune=telemetry=true`.
+
+The backend is a Cloudflare Worker with a D1 database under `worker/`:
+`POST /run` stores one run summary (the same object the console line carries,
+flattened into columns) and answers with the rank; `GET /board?limit=10&hours=12`
+returns the top runs, the feed and the stats. Deploy with `npm run worker:deploy`,
+apply schema changes with `npm run worker:migrate`, and clear the board before a
+new session with `npm run worker:reset`. `npm run qr` regenerates `public/qr.svg`.
+
 ## Run stats
 
 A player observer (`src/player/observer.ts`) rides the same per-frame

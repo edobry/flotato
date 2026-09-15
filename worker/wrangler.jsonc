@@ -9,7 +9,7 @@
     {
       "binding": "DB",
       "database_name": "flotato-board",
-      "database_id": "REPLACE_AFTER_CREATE",
+      "database_id": "7ee8d87d-8df0-4776-a5e6-d70247b262dd",
       "migrations_dir": "migrations"
     }
   ]

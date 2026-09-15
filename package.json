@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qr": "node scripts/qr.mjs",
+    "worker:deploy": "wrangler deploy -c worker/wrangler.jsonc",
+    "worker:migrate": "wrangler d1 migrations apply flotato-board --remote -c worker/wrangler.jsonc",
+    "worker:reset": "wrangler d1 execute flotato-board --remote -c worker/wrangler.jsonc --command \"DELETE FROM runs\""
   },
   "dependencies": {
     "react": "^19.2.8",

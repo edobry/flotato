@@ -43,6 +43,8 @@ export interface Tuning {
   dangerOnset: number;
   /** Walls pass through the player: every mapping keeps sounding, nothing kills. For tuning by ear. */
   ghost: boolean;
+  /** Post each run to the board. Only ever leaves a dev server with `?tune=telemetry=true`. */
+  telemetry: boolean;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -68,6 +70,7 @@ export const DEFAULT_TUNING: Tuning = {
   runStats: true,
   dangerOnset: 0,
   ghost: false,
+  telemetry: true,
 };
 
 export const SCALE_NAMES: ScaleName[] = ['wholeTone', 'minorHexatonic', 'majorPentatonic'];

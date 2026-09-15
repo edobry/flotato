@@ -39,8 +39,12 @@ Read it before starting a new task.
    screen. Phases 1 (persisted player model) and 2 (policy mapping the
    model to the tuning knobs) come next; keep the wall ramp fixed so scores
    stay comparable, adapt only the feedback layer.
-5. Mobile polish / PWA manifest / service worker
-6. localStorage best-time persistence
-7. Potato easter egg mode
-8. Backlog: rotation reversals, 60-second level structure, pattern authoring,
-   mt#5172 (engine: move bpm ramps off the tick grid)
+5. Board backend and projector page for the 2026-09-16 Fractal Tech demo:
+   done (mt#5178). Runs POST to a Cloudflare Worker + D1 (`worker/`); the
+   `/board/` page is the room's view. Its rows are the first real dataset
+   for Phases 1 and 2.
+6. Mobile polish / PWA manifest / service worker (the crowd-facing
+   prerequisites landed in mt#5173; manifest and service worker remain)
+7. localStorage best-time persistence
+8. Potato easter egg mode
+9. Backlog: rotation reversals, 60-second level structure, pattern authoring
