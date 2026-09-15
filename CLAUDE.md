@@ -51,8 +51,10 @@ Read it before starting a new task.
    Object relay. Deferred by it: the single-player staged entry (mt#5176),
    since the lobby is the staged entry. Later modes floated: tilt and body
    input, each a richer sensor for the player model.
-7. Mobile polish / PWA manifest / service worker (the crowd-facing
-   prerequisites landed in mt#5173; manifest and service worker remain)
+7. Mobile polish / PWA manifest / service worker: done (the crowd-facing
+   prerequisites in mt#5173; manifest, icons and service worker in mt#5195).
+   Single-player plays offline; board, pad and room stay online-only; a new
+   deploy is applied only at a moment that costs no run (`src/update.ts`).
 8. localStorage best-time persistence: done (mt#5196). `flotato.best`, shown
    on the start and game-over screens; the tune sheet has its own reset.
 9. Potato easter egg mode

@@ -1,0 +1,17 @@
+{
+  "name": "Flotato",
+  "short_name": "Flotato",
+  "description": "A hexagon-like reflex game. Rotate, survive, flow.",
+  "id": "/flotato/",
+  "start_url": "/flotato/",
+  "scope": "/flotato/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    { "src": "/flotato/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/flotato/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/flotato/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/flotato/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

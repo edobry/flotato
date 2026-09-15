@@ -10,6 +10,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "qr": "node scripts/qr.mjs",
+    "icons": "node scripts/icons.mjs",
     "worker:deploy": "wrangler deploy -c worker/wrangler.jsonc",
     "worker:migrate": "wrangler d1 migrations apply flotato-board --remote -c worker/wrangler.jsonc",
     "worker:reset": "wrangler d1 execute flotato-board --remote -c worker/wrangler.jsonc --command \"DELETE FROM runs\""
@@ -29,6 +30,7 @@
     "qrcode": "^1.5.4",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^5.0.0",
     "wrangler": "^4.131.2"
   }

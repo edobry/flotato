@@ -143,6 +143,19 @@ overshoot, wrong way, freeze, late). The block can be hidden with the
 Each run also logs one `[flotato] run` line to the console with the metrics
 and the tuning in force, for playtest notes. Nothing is persisted yet.
 
+## Install and offline
+
+The game is a PWA: on a phone, "Add to Home Screen" gives a full-screen icon
+that opens without browser chrome. A service worker (`vite-plugin-pwa`,
+configured in `vite.config.ts`) precaches the single-player shell, its chunks
+and the audio engine, so a run plays with no network from the second visit on.
+The board, pad and room need the Worker and stay online-only. A new deploy
+installs beside the running one and takes over at a moment that costs no run
+(`src/update.ts`): right away on the title screen, otherwise when the page is
+hidden between runs, otherwise on the next open. The manifest is
+`public/manifest.webmanifest`; the icons come from `npm run icons`
+(`rsvg-convert`) and are committed.
+
 ## Development
 
 ```sh
@@ -151,7 +164,11 @@ npm run dev      # local dev server
 npm run build    # typecheck + production build into dist/
 npm run preview  # serve the production build
 npm run lint
+npm run icons    # re-render public/icons/ from public/favicon.svg
 ```
+
+The dev server runs without the service worker; `npm run preview` serves the
+built site with it.
 
 ## Deploy
 
