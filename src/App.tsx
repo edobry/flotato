@@ -6,6 +6,7 @@ import { createInput, type Side } from './input';
 import { diffLabel } from './tuning/chips';
 import { appendRun, clearRuns, loadRuns, saveRuns, type RunRecord, type Slot } from './tuning/runlog';
 import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
+import { buildId, cleanTag, deviceId, loadTag, postRun, randomTag, saveTag, telemetryAllowed, type Rank } from './telemetry';
 import TuningOverlay from './TuningOverlay';
 import TuneSheet from './TuneSheet';
 import GhostStrip from './GhostStrip';
@@ -144,6 +145,9 @@ export default function Flotato() {
   const [runs, setRuns] = useState<RunRecord[]>(loadRuns);
   const [slot, setSlot] = useState<Slot>('');
   const [silentHint] = useState(silentSwitchMutes);
+  // The board identity: three letters, asked once on the start screen and kept.
+  const [tag, setTag] = useState<string>(() => loadTag() || randomTag());
+  const [rank, setRank] = useState<Rank | null>(null);
 
   const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
@@ -155,6 +159,9 @@ export default function Flotato() {
   const tuneModeRef = useRef(tuneMode);
   const slotRef = useRef<Slot>('');
   const runsRef = useRef(runs);
+  const tagRef = useRef(tag);
+  // Which run a board answer belongs to, so a slow reply never labels the next run.
+  const runSeqRef = useRef(0);
   // The loop's start and stop, for the sheet's play button and the strip's stop button.
   const startRef = useRef<((which: Slot) => void) | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -162,6 +169,11 @@ export default function Flotato() {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    tagRef.current = tag;
+    saveTag(tag);
+  }, [tag]);
 
   useEffect(() => {
     tuningRef.current = tuning;
@@ -300,6 +312,8 @@ export default function Flotato() {
       setSlot(which);
       setFinalTime(0);
       setRun(null);
+      setRank(null);
+      runSeqRef.current++;
       setPhase('playing');
       // A fresh snapshot before the first tick, or the engine would ramp the tempo from the last run's time.
       snap.t = 0;
@@ -334,6 +348,20 @@ export default function Flotato() {
         // One line per run so playtest notes can be tied to the tuning that produced them.
         console.info('[flotato] run', JSON.stringify({ ...summary, tuning: tuningRef.current }));
         setRun(summary);
+        if (tuningRef.current.telemetry && telemetryAllowed()) {
+          const seq = runSeqRef.current;
+          postRun({
+            device: deviceId(),
+            tag: tagRef.current,
+            variant: diffLabel(tuningRef.current),
+            slot: slotRef.current,
+            build: buildId(),
+            run: summary,
+            tuning: tuningRef.current,
+          }).then((r) => {
+            if (r && runSeqRef.current === seq) setRank(r);
+          });
+        }
         if (tuneModeRef.current) {
           const rec: RunRecord = {
             at: Date.now(),
@@ -795,6 +823,29 @@ export default function Flotato() {
     saveSlots(next);
   };
   const buttonStyle: CSSProperties = { pointerEvents: 'auto', marginTop: 14 };
+  const tagRowStyle: CSSProperties = {
+    pointerEvents: 'auto',
+    marginTop: 16,
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: 10,
+    fontSize: 14,
+    letterSpacing: 3,
+  };
+  const tagInputStyle: CSSProperties = {
+    width: '3.6ch',
+    padding: '2px 0',
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '1px solid rgba(255,255,255,0.45)',
+    color: 'inherit',
+    font: 'inherit',
+    letterSpacing: 'inherit',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    outline: 'none',
+    borderRadius: 0,
+  };
   const tuneButton = tuneMode && (
     <button type="button" className="btn" style={buttonStyle} onPointerDown={(e) => e.stopPropagation()} onClick={() => setSheetOpen(true)}>
       tune
@@ -856,6 +907,26 @@ export default function Flotato() {
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>
             {touch ? 'tap to begin' : 'tap or press SPACE to begin'}
           </div>
+          <label style={tagRowStyle} onPointerDown={(e) => e.stopPropagation()}>
+            <span style={{ opacity: 0.6 }}>TAG</span>
+            <input
+              value={tag}
+              onChange={(e) => setTag(cleanTag(e.target.value))}
+              onBlur={() => {
+                if (!tag) setTag(randomTag());
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+              maxLength={3}
+              autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-label="your three-letter tag for the board"
+              style={tagInputStyle}
+            />
+          </label>
           {silentHint && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.5 }}>the ring/silent switch mutes the game</div>}
           {tuneButton}
           <div style={creditStyle}>
@@ -876,6 +947,11 @@ export default function Flotato() {
           <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: 5 }}>GAME OVER</div>
           <div style={{ marginTop: 12, fontSize: 18 }}>TIME {finalTime.toFixed(2)}</div>
           <div style={{ fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>
+          {rank && (
+            <div style={{ marginTop: 6, fontSize: 14, opacity: 0.85 }}>
+              {rank.tag} · #{rank.rank} of {rank.total} tonight
+            </div>
+          )}
           {tuneMode && (
             <div style={{ marginTop: 6, fontSize: 12, opacity: 0.55, overflowWrap: 'anywhere' }}>
               {slot ? slot + ' · ' : ''}

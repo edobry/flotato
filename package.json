@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qr": "node scripts/qr.mjs",
+    "worker:deploy": "wrangler deploy -c worker/wrangler.jsonc",
+    "worker:migrate": "wrangler d1 migrations apply flotato-board --remote -c worker/wrangler.jsonc",
+    "worker:reset": "wrangler d1 execute flotato-board --remote -c worker/wrangler.jsonc --command \"DELETE FROM runs\""
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -16,13 +20,16 @@
     "tone": "^15.1.22"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260914.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
+    "qrcode": "^1.5.4",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.2"
   }
 }

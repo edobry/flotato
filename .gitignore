@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 .minsky/config.local.yaml
 
+# Wrangler local state
+.wrangler/
+
 # Minsky project identity (.minsky/config.yaml) is tracked; everything else the
 # tooling drops into .minsky/ or .cursor/ is local harness state, not project state.
 .minsky/*.jsonl
