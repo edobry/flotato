@@ -36,7 +36,8 @@ const STATE_HZ = 4;
 const ALL_READY_HOLD_S = 3;
 const MILESTONE_S = 10;
 const DEATH_FADE_S = 0.5;
-const QR_SRC = import.meta.env.BASE_URL + 'qr.svg';
+const QR_SRC = import.meta.env.BASE_URL + 'qr-pad.svg';
+const PAD_URL = PLAY_URL + 'pad/';
 
 interface Participant {
   id: string;
@@ -120,6 +121,8 @@ export default function Host() {
     const players = new Map<string, Player>();
     const pendingDir = new Map<string, -1 | 0 | 1>();
     let rosterDirty = true;
+    // Audio needs a gesture on this page; a round must not start silent, so auto-start waits for one.
+    let gestured = false;
     const sock = connectRoom<ToHost, HostOut>(room, 'host', {
       onStatus: (s) => {
         statusRef.current = s;
@@ -310,7 +313,7 @@ export default function Host() {
         const connected = [...players.values()].filter((p) => p.connected);
         const ready = connected.filter((p) => p.ready);
         // Everyone here is ready: give stragglers a moment, then go without a keypress.
-        if (connected.length >= 2 && ready.length === connected.length) {
+        if (gestured && connected.length >= 2 && ready.length === connected.length) {
           allReadyFor += dt;
           if (allReadyFor >= ALL_READY_HOLD_S) beginCountdown();
         } else {
@@ -513,6 +516,7 @@ export default function Host() {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Enter') {
         music.unlock();
+        gestured = true;
         setUnlocked(true);
         beginCountdown();
         e.preventDefault();
@@ -522,6 +526,7 @@ export default function Host() {
     };
     const onPointer = () => {
       music.unlock();
+      gestured = true;
       setUnlocked(true);
       if (phase === 'lobby') beginCountdown();
     };
@@ -550,8 +555,11 @@ export default function Host() {
         <div style={overlay}>
           <div style={{ display: 'flex', gap: '5vw', alignItems: 'center' }}>
             <div>
-              <img src={QR_SRC} alt={'QR code for ' + PLAY_URL} style={{ width: '32vh', display: 'block', imageRendering: 'pixelated' }} />
-              <div style={{ marginTop: 10, fontSize: 16, opacity: 0.7 }}>{PLAY_URL.replace('https://', '')}pad/{room === 'fractal' ? '' : '?room=' + room}</div>
+              <img src={QR_SRC} alt={'QR code for ' + PAD_URL} style={{ width: '32vh', display: 'block', imageRendering: 'pixelated' }} />
+              <div style={{ marginTop: 10, fontSize: 16, opacity: 0.7 }}>
+                {PAD_URL.replace('https://', '')}
+                {room === 'fractal' ? '' : '?room=' + room}
+              </div>
             </div>
             <div style={{ textAlign: 'left', minWidth: '30vw' }}>
               <div style={{ fontSize: 40, fontWeight: 800, letterSpacing: 8 }}>FLOTATO</div>
@@ -568,7 +576,7 @@ export default function Host() {
                 ))}
               </div>
               <div style={{ marginTop: 26, fontSize: 15, fontWeight: 700 }}>
-                {readyCount > 0 ? (unlocked ? 'SPACE starts the round' : 'tap or press SPACE to start') : 'waiting for the room to ready up'}
+                {unlocked ? (readyCount > 0 ? 'SPACE starts the round' : 'waiting for the room to ready up') : 'tap or press SPACE once to wake the sound'}
               </div>
               {view.round > 0 && <div style={{ marginTop: 6, fontSize: 13, opacity: 0.5 }}>round {view.round} done</div>}
             </div>

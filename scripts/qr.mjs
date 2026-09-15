@@ -1,8 +1,13 @@
-// Writes the QR code for the play URL to public/qr.svg. Run: npm run qr
+// Writes QR codes for the play URL and the pad URL to public/. Run: npm run qr
 import { writeFileSync } from 'node:fs';
 import QRCode from 'qrcode';
 
-const url = process.argv[2] ?? 'https://edobry.github.io/flotato/';
-const svg = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#ffffffff', light: '#00000000' } });
-writeFileSync(new URL('../public/qr.svg', import.meta.url), svg);
-console.log('public/qr.svg <-', url);
+const targets = [
+  ['qr.svg', 'https://edobry.github.io/flotato/'],
+  ['qr-pad.svg', 'https://edobry.github.io/flotato/pad/'],
+];
+for (const [file, url] of targets) {
+  const svg = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#ffffffff', light: '#00000000' } });
+  writeFileSync(new URL('../public/' + file, import.meta.url), svg);
+  console.log('public/' + file, '<-', url);
+}
