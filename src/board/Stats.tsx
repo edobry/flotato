@@ -70,17 +70,9 @@ const page: CSSProperties = {
 };
 const title: CSSProperties = { fontSize: '4vh', fontWeight: 800, letterSpacing: '0.35em', textAlign: 'center' };
 const subline: CSSProperties = { fontSize: '2vh', letterSpacing: '0.15em', opacity: 0.6, textAlign: 'center' };
-const columns = 'minmax(14em, 2fr) 2.2em 4em 4.5em 7.5em 7.5em 4.5em 4.5em 5em minmax(10em, 1.5fr)';
-const headRow: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: columns,
-  gap: '1em',
-  fontSize: '1.7vh',
-  letterSpacing: '0.15em',
-  opacity: 0.5,
-  padding: '0 0 1vh',
-  borderBottom: '1px solid rgba(255,255,255,0.15)',
-};
+/** Column widths in em of the row font, so the header (smaller type inside) lines up with the cells; sums under a 16:9 width. */
+const columns = 'minmax(10em, 1.5fr) 2.2em 4em 4.5em 7em 7.5em 4.2em 4.2em 5em minmax(8em, 1fr)';
+const HEADERS = ['VARIANT', 'AB', 'RUNS', 'PLAYERS', 'TIME MED · P90', 'REACT MED · P90', 'BEAT R', 'ANTIC', 'COUNT-IN R', 'DEATHS'];
 const row: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: columns,
@@ -91,6 +83,8 @@ const row: CSSProperties = {
   padding: '1.2vh 0',
   borderBottom: '1px solid rgba(255,255,255,0.08)',
 };
+const headRow: CSSProperties = { ...row, alignItems: 'end', padding: '0 0 1vh', borderBottom: '1px solid rgba(255,255,255,0.15)' };
+const headCell: CSSProperties = { fontSize: '1.7vh', letterSpacing: '0.15em', opacity: 0.5 };
 const footer: CSSProperties = { marginTop: 'auto', fontSize: '1.8vh', opacity: 0.45, textAlign: 'center', letterSpacing: '0.1em' };
 
 const num = (v: number | null, digits = 2) => (v === null ? DASH : v.toFixed(digits));
@@ -177,16 +171,11 @@ export default function Stats() {
 
       <div>
         <div style={headRow}>
-          <span>VARIANT</span>
-          <span>AB</span>
-          <span>RUNS</span>
-          <span>PLAYERS</span>
-          <span>TIME MED · P90</span>
-          <span>REACT MED · P90</span>
-          <span>BEAT R</span>
-          <span>ANTIC</span>
-          <span>COUNT-IN R</span>
-          <span>DEATHS</span>
+          {HEADERS.map((h) => (
+            <span key={h} style={headCell}>
+              {h}
+            </span>
+          ))}
         </div>
         {data && data.groups.length === 0 && <div style={{ ...row, display: 'block', opacity: 0.5 }}>no runs in the window</div>}
         {data?.groups.map((g) => (

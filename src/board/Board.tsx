@@ -17,7 +17,7 @@ interface Entry {
   at: number;
 }
 
-interface Stats {
+interface RoomStats {
   runs: number;
   devices: number;
   best: number | null;
@@ -30,7 +30,7 @@ interface BoardData {
   hours: number;
   top: Entry[];
   feed: Entry[];
-  stats: Stats;
+  stats: RoomStats;
 }
 
 function readView(): string {
