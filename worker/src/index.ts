@@ -1,16 +1,27 @@
 // The board Worker: runs come in from phones, the projector reads them back.
 // POST /run stores one run summary and answers with its rank in the window;
-// GET /board returns the top runs, the latest runs, and the room's numbers.
+// GET /board returns the top runs, the latest runs, and the room's numbers;
+// GET /stats groups the window's runs by variant for the analytics view;
+// POST /prefs stores guided-listen verdicts, GET /prefs/summary counts them.
 
 import {
   MAX_BODY_BYTES,
+  STATS_CACHE_MS,
+  STATS_MAX_ROWS,
   STATS_ROWS,
   allowOrigin,
   computeStats,
+  computeVariantStats,
   parseBoardQuery,
+  parsePref,
   parseRun,
+  parseStatsQuery,
+  statsQueryKey,
+  summarizePrefs,
+  type PrefSummaryRow,
   type RunRow,
   type StatsRow,
+  type VariantRow,
 } from './lib';
 
 import { Room } from './room';
@@ -40,28 +51,52 @@ function cors(request: Request, env: Env): Record<string, string> {
   };
 }
 
-function json(data: unknown, status: number, headers: Record<string, string>): Response {
+function json(data: unknown, status: number, headers: Record<string, string>, cacheControl = 'no-store'): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': cacheControl, ...headers },
   });
 }
 
-async function postRun(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+/**
+ * Aggregate answers reused for STATS_CACHE_MS, keyed by route and parsed
+ * query. In isolate memory: the Cache API is a no-op on workers.dev, and the
+ * point is only that a polling projector reads D1 twice a minute, not every poll.
+ */
+const summaryCache = new Map<string, { at: number; data: unknown }>();
+const SUMMARY_CACHE_CONTROL = `public, max-age=${STATS_CACHE_MS / 1000}`;
+
+async function cached(key: string, compute: () => Promise<unknown>): Promise<unknown> {
+  const now = Date.now();
+  const hit = summaryCache.get(key);
+  if (hit && now - hit.at < STATS_CACHE_MS) return hit.data;
+  const data = await compute();
+  summaryCache.set(key, { at: now, data });
+  // Drop stale entries so odd one-off queries do not accumulate.
+  for (const [k, v] of summaryCache) if (now - v.at >= STATS_CACHE_MS) summaryCache.delete(k);
+  return data;
+}
+
+/** The request body as JSON under the byte limit, or the response that refuses it. */
+async function readJson(request: Request, headers: Record<string, string>): Promise<{ body: unknown } | { refused: Response }> {
   const declared = Number(request.headers.get('Content-Length') ?? 0);
-  if (declared > MAX_BODY_BYTES) return json({ error: 'body too large' }, 413, headers);
+  if (declared > MAX_BODY_BYTES) return { refused: json({ error: 'body too large' }, 413, headers) };
   const text = await request.text();
   // Bytes, not UTF-16 code units: a body of multi-byte characters must not slip under the limit.
   if (text.length > MAX_BODY_BYTES || new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-    return json({ error: 'body too large' }, 413, headers);
+    return { refused: json({ error: 'body too large' }, 413, headers) };
   }
-  let body: unknown;
   try {
-    body = JSON.parse(text);
+    return { body: JSON.parse(text) };
   } catch {
-    return json({ error: 'body must be JSON' }, 400, headers);
+    return { refused: json({ error: 'body must be JSON' }, 400, headers) };
   }
-  const parsed = parseRun(body);
+}
+
+async function postRun(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+  const read = await readJson(request, headers);
+  if ('refused' in read) return read.refused;
+  const parsed = parseRun(read.body);
   if ('error' in parsed) return json({ error: parsed.error }, 400, headers);
   const row: RunRow = parsed.row;
   const at = Date.now();
@@ -123,6 +158,76 @@ async function getBoard(request: Request, env: Env, headers: Record<string, stri
   );
 }
 
+/**
+ * Where a summary window starts: the later of the hours cutoff and the since
+ * marker. A build marker is the build's first row in the table being
+ * summarized (a walk can finish without a run, so prefs resolve against
+ * prefs); a build with no rows there yields null, an empty window.
+ */
+async function windowStart(query: ReturnType<typeof parseStatsQuery>, env: Env, now: number, table: 'runs' | 'prefs'): Promise<number | null> {
+  let since = query.hours === null ? 0 : now - query.hours * HOUR_MS;
+  let markerAt: number | null = null;
+  if (query.since?.kind === 'timestamp') markerAt = query.since.at;
+  else if (query.since?.kind === 'build') {
+    const first = await env.DB.prepare(`SELECT MIN(at) AS at FROM ${table} WHERE build = ?`).bind(query.since.build).first<{ at: number | null }>();
+    markerAt = first?.at ?? null;
+    if (markerAt === null) return null;
+  }
+  if (markerAt !== null) since = Math.max(since, markerAt);
+  return since;
+}
+
+async function getStats(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+  const query = parseStatsQuery(new URL(request.url).searchParams);
+  const data = await cached('stats|' + statsQueryKey(query), async () => {
+    const since = await windowStart(query, env, Date.now(), 'runs');
+    const columns = 'variant, slot, device, time, death, reaction_median, reaction_p90, anticipation, beat_r, countin_onsets, countin_r';
+    let rows: VariantRow[] = [];
+    if (since !== null) {
+      const read = query.variant === null
+        ? env.DB.prepare(`SELECT ${columns} FROM runs WHERE at >= ? ORDER BY at DESC LIMIT ?`).bind(since, STATS_MAX_ROWS)
+        : env.DB.prepare(`SELECT ${columns} FROM runs WHERE at >= ? AND variant = ? ORDER BY at DESC LIMIT ?`).bind(since, query.variant, STATS_MAX_ROWS);
+      rows = (await read.all()).results as unknown as VariantRow[];
+    }
+    return {
+      since,
+      hours: query.hours,
+      variant: query.variant,
+      marker: query.since,
+      rows: rows.length,
+      truncated: rows.length >= STATS_MAX_ROWS,
+      groups: computeVariantStats(rows),
+    };
+  });
+  return json(data, 200, headers, SUMMARY_CACHE_CONTROL);
+}
+
+async function postPrefs(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+  const read = await readJson(request, headers);
+  if ('refused' in read) return read.refused;
+  const parsed = parsePref(read.body);
+  if ('error' in parsed) return json({ error: parsed.error }, 400, headers);
+  const row = parsed.row;
+  await env.DB.prepare('INSERT INTO prefs (at, device, build, step, verdict, base, final) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(Date.now(), row.device, row.build, row.step, row.verdict, row.base, row.final)
+    .run();
+  return json({ ok: true }, 201, headers);
+}
+
+async function getPrefsSummary(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+  const query = parseStatsQuery(new URL(request.url).searchParams);
+  const data = await cached('prefs|' + statsQueryKey({ ...query, variant: null }), async () => {
+    const since = await windowStart(query, env, Date.now(), 'prefs');
+    let rows: PrefSummaryRow[] = [];
+    if (since !== null) {
+      const read = env.DB.prepare('SELECT step, verdict, final FROM prefs WHERE at >= ? ORDER BY at DESC LIMIT ?').bind(since, STATS_MAX_ROWS);
+      rows = (await read.all()).results as unknown as PrefSummaryRow[];
+    }
+    return { since, hours: query.hours, marker: query.since, rows: rows.length, truncated: rows.length >= STATS_MAX_ROWS, ...summarizePrefs(rows) };
+  });
+  return json(data, 200, headers, SUMMARY_CACHE_CONTROL);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const headers = cors(request, env);
@@ -139,7 +244,12 @@ export default {
     try {
       if (request.method === 'POST' && url.pathname === '/run') return await postRun(request, env, headers);
       if (request.method === 'GET' && url.pathname === '/board') return await getBoard(request, env, headers);
-      if (request.method === 'GET' && url.pathname === '/') return json({ ok: true, routes: ['POST /run', 'GET /board', 'WS /room/<code>/ws?role=pad|host'] }, 200, headers);
+      if (request.method === 'GET' && url.pathname === '/stats') return await getStats(request, env, headers);
+      if (request.method === 'POST' && url.pathname === '/prefs') return await postPrefs(request, env, headers);
+      if (request.method === 'GET' && url.pathname === '/prefs/summary') return await getPrefsSummary(request, env, headers);
+      if (request.method === 'GET' && url.pathname === '/') {
+        return json({ ok: true, routes: ['POST /run', 'GET /board', 'GET /stats', 'POST /prefs', 'GET /prefs/summary', 'WS /room/<code>/ws?role=pad|host'] }, 200, headers);
+      }
     } catch (err) {
       console.error(err);
       return json({ error: 'internal' }, 500, headers);
