@@ -32,18 +32,27 @@ switch does not mute it; on older iOS it does, and the title screen says so.
 
 ## Music
 
-The music is synthesized in the browser with Tone.js and driven by game state:
-survival time ramps the tempo and transforms the patterns, the nearest wall in
-your lane closes the arp's filter, the sector you occupy picks the scale degree
-the arp emphasizes, threading a gap fires an accent, death sweeps the mix down,
-and a new best gets a stinger. The visual pulse locks to the beat.
+The music is synthesized in the browser with Tone.js and driven by game state.
+The default register (v2, after the 2026-09-15 rehearsal) is built to be
+hypnotic rather than anxious: 128 to 136 BPM, the range of Super Hexagon's own
+tracks; a minor hexatonic scale with a real root; a kick-locked pump that dips
+the bass, pad and arp on every beat; an off-beat bass between the kicks; and
+layers that arrive on plateaus every few bars (pad and bass, then the arp in
+8ths, then hats, then the arp at 16ths) with the arp's shape changing on a fixed
+schedule instead of at random. The nearest wall in your lane lifts the
+brightness a little, the sector you occupy becomes the arp's melody note,
+threading a gap fires an accent, death sweeps the mix down, and a new best gets
+a stinger. The visual pulse locks to the beat. The previous register (v1:
+160 BPM, whole-tone, random degradation) is one chip away for comparison.
 
 Every mapping has a knob. The values persist in local storage and can be set
 from the URL as `?tune=reactivity=0.5,drums=false`. `reactivity=0` turns the
 engine into a metronome, which is what Super Hexagon does. The visual pulse is
 placed on the audible beat by shifting the Transport phase by the audio output
 latency; `beatOffsetMs` adds a manual trim for Bluetooth output, where the
-reported latency can be short of the real one.
+reported latency can be short of the real one. The tune sheet's first chip
+rows are listening choices for the register (tempo, scale, arp ceiling, pump,
+`register v1`), meant to be compared by ear with the A/B pair.
 
 ## Tuning
 

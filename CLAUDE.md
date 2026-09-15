@@ -31,7 +31,9 @@ Read it before starting a new task.
 2. Rename pass: done
 3. Tone.js procedural music engine: done (mt#5151). Design decisions and
    the signal map are on that task's spec; every mapping is a knob in the
-   tuning overlay (T, or `?tune`).
+   tuning overlay (T, or `?tune`). Re-registered as v2 after the demo
+   rehearsal (mt#5181: 130 BPM range, tonal scale, pump, deterministic
+   evolution on plateaus); v1 stays selectable for A/B.
 4. Player instrumentation, Phase 0 of the attunement vision: done
    (mt#5167). An observer on the same snapshot the music reads computes
    per-run loop metrics (reaction latency, anticipation ratio, beat
