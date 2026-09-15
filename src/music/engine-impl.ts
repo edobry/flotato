@@ -117,6 +117,9 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
       v.padLfo.min = -600;
       v.padLfo.max = 600;
     } else {
+      // v1 is the previous engine unchanged: the duck gain sits at unity with no automation and the pad filter is wide open, so both are identities.
+      v.duck.gain.cancelScheduledValues(Tone.now());
+      v.duck.gain.value = 1;
       v.arp.set({ oscillator: { type: 'square' }, envelope: { attack: 0.004, decay: 0.12, sustain: 0.15, release: 0.12 } });
       v.arp.volume.value = -14;
       v.kick.set({ pitchDecay: 0.03, octaves: 6, envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.05 } });
@@ -232,7 +235,9 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
       Math.max(min, (h.end - h.start) * secPerCycle * k);
     ctx.tuning = tuning;
     const sc = scale();
-    const sector = sectorOffset();
+    // The sector is the arp's melody note when the mapping is on (sector 0 is the root, a valid note); the fifth otherwise.
+    const mapped = tuning.sectorMapping && tuning.reactivity > 0;
+    const melody = mapped ? state.sector : 4;
     const react = tuning.reactivity;
     const bar = Math.floor(cycleStart) - startCycle;
     const layers = layersAt(bar, tuning.layerBars, tuning.arpCeiling);
@@ -260,7 +265,7 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
       const pat = arpPatV2(bar, layers.sixteenths);
       const vel = layers.sixteenths ? 0.42 : 0.5;
       for (const h of pat(span, ctx)) {
-        const deg = h.value === 's' ? sector || 4 : Number(h.value);
+        const deg = h.value === 's' ? melody : Number(h.value);
         v.arp.triggerAttackRelease(degreeToHz(sc, deg, 1), dur(h, 0.5, 0.03), at(h.start), vel);
       }
     }

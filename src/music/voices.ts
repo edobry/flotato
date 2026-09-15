@@ -2,7 +2,9 @@
 // few one-shot voices. Everything except the stinger routes through one master
 // filter so death can sweep the whole mix. Bass, arp and pad also pass through
 // `duck`, the gain the engine dips on every beat for the v2 register's pulse;
-// the drums bypass it so the kick itself never ducks.
+// the drums bypass it so the kick itself never ducks. In the v1 register the
+// gain stays at unity and the pad filter wide open, so the v1 signal path is
+// the previous one to within a transparent node.
 
 import * as Tone from 'tone';
 
