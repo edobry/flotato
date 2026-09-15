@@ -61,7 +61,7 @@ function isPortrait(): boolean {
   try {
     return window.matchMedia('(orientation: portrait)').matches;
   } catch {
-    return false;
+    return window.innerHeight > window.innerWidth;
   }
 }
 
@@ -165,15 +165,28 @@ export default function Pad() {
   const [portrait, setPortrait] = useState(isPortrait);
 
   useEffect(() => {
-    let mq: MediaQueryList | null = null;
+    // Older iOS Safari only has addListener on MediaQueryList; resize covers everything else.
+    const onChange = () => setPortrait(isPortrait());
+    let mq: (MediaQueryList & { addListener?: (cb: () => void) => void; removeListener?: (cb: () => void) => void }) | null = null;
     try {
       mq = window.matchMedia('(orientation: portrait)');
     } catch {
-      return;
+      mq = null;
     }
-    const onChange = () => setPortrait(mq!.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq!.removeEventListener('change', onChange);
+    if (mq) {
+      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+      else mq.addListener?.(onChange);
+    }
+    window.addEventListener('resize', onChange);
+    window.addEventListener('orientationchange', onChange);
+    return () => {
+      if (mq) {
+        if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange);
+        else mq.removeListener?.(onChange);
+      }
+      window.removeEventListener('resize', onChange);
+      window.removeEventListener('orientationchange', onChange);
+    };
   }, []);
 
   useEffect(() => {
