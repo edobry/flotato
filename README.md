@@ -95,6 +95,27 @@ returns the top runs, the feed and the stats. Deploy with `npm run worker:deploy
 apply schema changes with `npm run worker:migrate`, and clear the board before a
 new session with `npm run worker:reset`. `npm run qr` regenerates `public/qr.svg`.
 
+## The room
+
+One field for a whole room: https://edobry.github.io/flotato/room/ on the
+laptop that feeds the projector, https://edobry.github.io/flotato/pad/ on
+every phone (the lobby shows the QR). A player types a name and gets a face:
+the name is hashed, the hash seeds an elementary cellular automaton, sixteen
+rows mirrored make the glyph (`src/glyph.ts`), so the pad and the projector
+agree without sending pixels. Ready up on the phone; the host starts the round
+with Space (or the round starts itself a few seconds after everyone present is
+ready). During play the phone is a controller, hold left or right, and the
+projector is where you look; when you fall, the phone shows your time and
+place, and you are in the next round. A round ends when the last player falls
+or at the cap; the lobby returns with ready flags cleared.
+
+The host page runs the whole game; the phones only send which way they hold.
+A Durable Object in the Worker (`worker/src/room.ts`, `/room/<code>/ws`)
+relays inputs to the host and the host's state to the pads; rooms are named
+in the URL (`?room=<code>`, default `fractal`). Each death posts to the board
+as a run with `variant: 'room'`, tagged with the first three letters of the
+name, so the board and the D1 rows cover the room too.
+
 ## Run stats
 
 A player observer (`src/player/observer.ts`) rides the same per-frame
