@@ -16,6 +16,7 @@ interface Props {
   onClearRuns: () => void;
   onPlay: (slot: Slot) => void;
   onClose: () => void;
+  onGuide: () => void;
 }
 
 function copy(text: string, done: (ok: boolean) => void) {
@@ -27,7 +28,7 @@ function copy(text: string, done: (ok: boolean) => void) {
 }
 
 /** Between runs: chips, the A/B pair, every knob at thumb size, and the run log. */
-export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot, runs, onClearRuns, onPlay, onClose }: Props) {
+export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot, runs, onClearRuns, onPlay, onClose, onGuide }: Props) {
   const [copied, setCopied] = useState<'' | 'link' | 'json' | 'fail'>('');
   // When the clipboard is unavailable (no secure context, permission denied), show the text to select by hand.
   const [fallback, setFallback] = useState('');
@@ -58,9 +59,14 @@ export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot,
     <div className="sheet" onPointerDown={(e) => e.stopPropagation()}>
       <div className="sheet-head">
         <span>TUNING</span>
-        <button type="button" className="btn" onClick={onClose}>
-          close
-        </button>
+        <span style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn" onClick={onGuide}>
+            guide me
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            close
+          </button>
+        </span>
       </div>
 
       <div className="chips">
