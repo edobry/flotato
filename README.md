@@ -135,15 +135,25 @@ Chrome locks to landscape where it can). Ready up on the phone; the host starts 
 with Space (or the round starts itself a few seconds after everyone present is
 ready). During play the phone is a controller, hold left or right, and the
 projector is where you look; when you fall, the phone shows your time and
-place, and you are in the next round. A round ends when the last player falls
-or at the cap; the lobby returns with ready flags cleared.
+place, and the standings as they change: who is still in and for how long,
+who fell and when. A round ends when the last player falls or at the cap; the
+over screen counts down to the next lobby, and the lobby keeps the round's top
+three for a moment. Someone who joins mid-round is told so and is in the
+next one. Host keys: Space starts, R ends the round and returns to the lobby,
+M toggles mute, Escape hides the overlays (the lobby corner lists them).
 
 The host page runs the whole game; the phones only send which way they hold.
 A Durable Object in the Worker (`worker/src/room.ts`, `/room/<code>/ws`)
-relays inputs to the host and the host's state to the pads; rooms are named
-in the URL (`?room=<code>`, default `fractal`). Each death posts to the board
-as a run with `variant: 'room'`, tagged with the first three letters of the
-name, so the board and the D1 rows cover the room too.
+relays inputs to the host and the host's state to the pads, keeps the round
+number so a reloaded projector keeps counting, and tells the pads when the
+projector is away; rooms are named in the URL (`?room=<code>`, default
+`fractal`). Both ends ping and replace a socket that has gone silent, and a
+pad re-sends where its thumb is when either end reconnects, so a Wi-Fi drop
+mid-round costs the round nothing. Each death posts to the board as a run
+with `variant: 'room'`, tagged with the first three letters of the name, so
+the board and the D1 rows cover the room too. To run the room against a
+local Worker: `npx wrangler dev -c worker/wrangler.jsonc` and
+`VITE_ROOM_URL=http://localhost:8787` in an untracked `.env.local`.
 
 ## Run stats
 
