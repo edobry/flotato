@@ -63,9 +63,17 @@ const count = (x: unknown): number => (finite(x) && x >= 0 ? Math.floor(x) : 0);
 const metric = (x: unknown, n: number): number | null => (n > 0 && finite(x) ? x : null);
 const str = (x: unknown, fallback = ''): string => (typeof x === 'string' ? x.slice(0, MAX_STRING) : fallback);
 
-/** An object as bounded JSON; over the bound it is stored as empty, so the row is kept and the diff is not. */
+const isPrimitive = (x: unknown): x is string | number | boolean => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean';
+
+/**
+ * A tuning diff as bounded JSON: only string, number and boolean values (a
+ * Tuning holds nothing else), so a summary never prints a nested object;
+ * over the bound it is stored as empty, so the row is kept and the diff is not.
+ */
 const diffJson = (x: Json): string => {
-  const json = JSON.stringify(x);
+  const flat: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(x)) if (isPrimitive(v)) flat[k] = v;
+  const json = JSON.stringify(flat);
   return json.length > MAX_DIFF_JSON ? '{}' : json;
 };
 

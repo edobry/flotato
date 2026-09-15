@@ -159,16 +159,17 @@ async function getBoard(request: Request, env: Env, headers: Record<string, stri
 }
 
 /**
- * Where a stats window starts: the later of the hours cutoff and the since
- * marker. A build marker is the build's first run; an unknown build yields
- * null, an empty window.
+ * Where a summary window starts: the later of the hours cutoff and the since
+ * marker. A build marker is the build's first row in the table being
+ * summarized (a walk can finish without a run, so prefs resolve against
+ * prefs); a build with no rows there yields null, an empty window.
  */
-async function windowStart(query: ReturnType<typeof parseStatsQuery>, env: Env, now: number): Promise<number | null> {
+async function windowStart(query: ReturnType<typeof parseStatsQuery>, env: Env, now: number, table: 'runs' | 'prefs'): Promise<number | null> {
   let since = query.hours === null ? 0 : now - query.hours * HOUR_MS;
   let markerAt: number | null = null;
   if (query.since?.kind === 'timestamp') markerAt = query.since.at;
   else if (query.since?.kind === 'build') {
-    const first = await env.DB.prepare('SELECT MIN(at) AS at FROM runs WHERE build = ?').bind(query.since.build).first<{ at: number | null }>();
+    const first = await env.DB.prepare(`SELECT MIN(at) AS at FROM ${table} WHERE build = ?`).bind(query.since.build).first<{ at: number | null }>();
     markerAt = first?.at ?? null;
     if (markerAt === null) return null;
   }
@@ -179,7 +180,7 @@ async function windowStart(query: ReturnType<typeof parseStatsQuery>, env: Env, 
 async function getStats(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
   const query = parseStatsQuery(new URL(request.url).searchParams);
   const data = await cached('stats|' + statsQueryKey(query), async () => {
-    const since = await windowStart(query, env, Date.now());
+    const since = await windowStart(query, env, Date.now(), 'runs');
     const columns = 'variant, slot, device, time, death, reaction_median, reaction_p90, anticipation, beat_r, countin_onsets, countin_r';
     let rows: VariantRow[] = [];
     if (since !== null) {
@@ -216,7 +217,7 @@ async function postPrefs(request: Request, env: Env, headers: Record<string, str
 async function getPrefsSummary(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
   const query = parseStatsQuery(new URL(request.url).searchParams);
   const data = await cached('prefs|' + statsQueryKey({ ...query, variant: null }), async () => {
-    const since = await windowStart(query, env, Date.now());
+    const since = await windowStart(query, env, Date.now(), 'prefs');
     let rows: PrefSummaryRow[] = [];
     if (since !== null) {
       const read = env.DB.prepare('SELECT step, verdict, final FROM prefs WHERE at >= ? ORDER BY at DESC LIMIT ?').bind(since, STATS_MAX_ROWS);

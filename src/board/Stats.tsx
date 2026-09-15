@@ -170,17 +170,14 @@ export default function Stats() {
   useEffect(() => {
     const query = statsQuery();
     let stopped = false;
+    // The two endpoints refresh independently: one failing leaves the other live.
     const poll = async () => {
-      try {
-        const [nextStats, nextPrefs] = await Promise.all([fetchJson<StatsData>('/stats', query), fetchJson<PrefsData>('/prefs/summary', query)]);
-        if (!stopped) {
-          setData(nextStats);
-          setPrefs(nextPrefs);
-          setError(null);
-        }
-      } catch (err) {
-        if (!stopped) setError(err instanceof Error ? err.message : String(err));
-      }
+      const [stats, prefs] = await Promise.allSettled([fetchJson<StatsData>('/stats', query), fetchJson<PrefsData>('/prefs/summary', query)]);
+      if (stopped) return;
+      if (stats.status === 'fulfilled') setData(stats.value);
+      if (prefs.status === 'fulfilled') setPrefs(prefs.value);
+      const failed = [stats, prefs].find((r) => r.status === 'rejected');
+      setError(failed ? (failed.reason instanceof Error ? failed.reason.message : String(failed.reason)) : null);
     };
     poll();
     const timer = setInterval(poll, POLL_MS);

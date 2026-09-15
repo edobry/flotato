@@ -254,6 +254,12 @@ describe('parsePref', () => {
     expect(parsed.row.step).toHaveLength(64);
     expect(parsed.row.base).toBe('{}');
   });
+
+  it('keeps only primitive diff values', () => {
+    const parsed = parsePref({ device: 'd1', final: { scale: 'wholeTone', pump: 0, drums: false, nested: { a: 1 }, list: [1], gone: null } });
+    if (!('row' in parsed)) throw new Error(parsed.error);
+    expect(parsed.row.final).toBe('{"scale":"wholeTone","pump":0,"drums":false}');
+  });
 });
 
 describe('prefs summary', () => {
