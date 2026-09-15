@@ -1,16 +1,22 @@
 // The board Worker: runs come in from phones, the projector reads them back.
 // POST /run stores one run summary and answers with its rank in the window;
-// GET /board returns the top runs, the latest runs, and the room's numbers.
+// GET /board returns the top runs, the latest runs, and the room's numbers;
+// GET /stats groups the window's runs by variant for the analytics view.
 
 import {
   MAX_BODY_BYTES,
+  STATS_CACHE_MS,
+  STATS_MAX_ROWS,
   STATS_ROWS,
   allowOrigin,
   computeStats,
+  computeVariantStats,
   parseBoardQuery,
   parseRun,
+  parseStatsQuery,
   type RunRow,
   type StatsRow,
+  type VariantRow,
 } from './lib';
 
 import { Room } from './room';
@@ -40,12 +46,19 @@ function cors(request: Request, env: Env): Record<string, string> {
   };
 }
 
-function json(data: unknown, status: number, headers: Record<string, string>): Response {
+function json(data: unknown, status: number, headers: Record<string, string>, cacheControl = 'no-store'): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': cacheControl, ...headers },
   });
 }
+
+/**
+ * /stats answers reused for STATS_CACHE_MS, keyed by the parsed query. In
+ * isolate memory: the Cache API is a no-op on workers.dev, and the point is
+ * only that a polling projector reads D1 twice a minute, not every poll.
+ */
+const statsCache = new Map<string, { at: number; data: unknown }>();
 
 async function postRun(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
   const declared = Number(request.headers.get('Content-Length') ?? 0);
@@ -123,6 +136,45 @@ async function getBoard(request: Request, env: Env, headers: Record<string, stri
   );
 }
 
+async function getStats(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
+  const query = parseStatsQuery(new URL(request.url).searchParams);
+  const key = JSON.stringify(query);
+  const now = Date.now();
+  const cacheControl = `public, max-age=${STATS_CACHE_MS / 1000}`;
+  const hit = statsCache.get(key);
+  if (hit && now - hit.at < STATS_CACHE_MS) return json(hit.data, 200, headers, cacheControl);
+
+  // The window starts at the later of the hours cutoff and the since marker; an unknown build is an empty window.
+  let since = query.hours === null ? 0 : now - query.hours * HOUR_MS;
+  let markerAt: number | null = null;
+  if (query.since?.kind === 'timestamp') markerAt = query.since.at;
+  else if (query.since?.kind === 'build') {
+    const first = await env.DB.prepare('SELECT MIN(at) AS at FROM runs WHERE build = ?').bind(query.since.build).first<{ at: number | null }>();
+    markerAt = first?.at ?? null;
+    if (markerAt === null) since = Number.MAX_SAFE_INTEGER;
+  }
+  if (markerAt !== null) since = Math.max(since, markerAt);
+
+  const columns = 'variant, slot, device, time, death, reaction_median, reaction_p90, anticipation, beat_r, countin_onsets, countin_r';
+  const read = query.variant === null
+    ? env.DB.prepare(`SELECT ${columns} FROM runs WHERE at >= ? ORDER BY at DESC LIMIT ?`).bind(since, STATS_MAX_ROWS)
+    : env.DB.prepare(`SELECT ${columns} FROM runs WHERE at >= ? AND variant = ? ORDER BY at DESC LIMIT ?`).bind(since, query.variant, STATS_MAX_ROWS);
+  const rows = (await read.all()).results as unknown as VariantRow[];
+  const data = {
+    since: since === Number.MAX_SAFE_INTEGER ? null : since,
+    hours: query.hours,
+    variant: query.variant,
+    marker: query.since,
+    rows: rows.length,
+    truncated: rows.length >= STATS_MAX_ROWS,
+    groups: computeVariantStats(rows),
+  };
+  statsCache.set(key, { at: now, data });
+  // Drop stale entries so odd one-off queries do not accumulate.
+  for (const [k, v] of statsCache) if (now - v.at >= STATS_CACHE_MS) statsCache.delete(k);
+  return json(data, 200, headers, cacheControl);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const headers = cors(request, env);
@@ -139,7 +191,8 @@ export default {
     try {
       if (request.method === 'POST' && url.pathname === '/run') return await postRun(request, env, headers);
       if (request.method === 'GET' && url.pathname === '/board') return await getBoard(request, env, headers);
-      if (request.method === 'GET' && url.pathname === '/') return json({ ok: true, routes: ['POST /run', 'GET /board', 'WS /room/<code>/ws?role=pad|host'] }, 200, headers);
+      if (request.method === 'GET' && url.pathname === '/stats') return await getStats(request, env, headers);
+      if (request.method === 'GET' && url.pathname === '/') return json({ ok: true, routes: ['POST /run', 'GET /board', 'GET /stats', 'WS /room/<code>/ws?role=pad|host'] }, 200, headers);
     } catch (err) {
       console.error(err);
       return json({ error: 'internal' }, 500, headers);

@@ -108,6 +108,21 @@ returns the top runs, the feed and the stats. Deploy with `npm run worker:deploy
 apply schema changes with `npm run worker:migrate`, and clear the board before a
 new session with `npm run worker:reset`. `npm run qr` regenerates `public/qr.svg`.
 
+### Stats by variant
+
+The rows are the first real dataset, so the board has an analytics view:
+https://edobry.github.io/flotato/board/?view=stats groups the window's runs by
+tuning variant (the `?tune=` diff each run was played under, `default` for
+none) and by A/B slot, one row each: runs, players, median and p90 survival
+time, median reaction latency and p90, median beat R, anticipation ratio,
+count-in R, and a death-class bar. It reads `GET /stats` on the Worker, which
+takes the same `hours` window as the board, an optional `variant` filter, and a
+`since` marker that starts the window at a ms timestamp or at the first run of
+a build id (the short commit of the deployed game, the `build` column each
+run carries), so one session can be read on its own:
+`/board/?view=stats&since=9178ffc`. The Worker reads at most
+5000 rows per answer and caches each answer for 30 s; the page polls every 30 s.
+
 ## The room
 
 One field for a whole room: https://edobry.github.io/flotato/room/ on the

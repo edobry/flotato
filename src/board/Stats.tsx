@@ -1,0 +1,211 @@
+// The board's analytics view (/board/?view=stats): the window's runs grouped
+// by tuning variant, one row each with medians and a death-class bar, so a
+// register A/B or a session argues from numbers. Polls slowly; the Worker
+// caches the answer for as long.
+
+import { useEffect, useState, type CSSProperties } from 'react';
+import { BOARD_URL } from '../config';
+
+const POLL_MS = 30000;
+const DASH = '—';
+const PASS_THROUGH = ['hours', 'since', 'variant'] as const;
+const DEATH_ORDER = ['late', 'freeze', 'overshoot', 'jitter', 'wrong way'] as const;
+const DEATH_COLOR: Record<string, string> = {
+  late: 'hsl(195, 85%, 62%)',
+  freeze: 'hsl(265, 70%, 68%)',
+  overshoot: 'hsl(30, 90%, 60%)',
+  jitter: 'hsl(55, 90%, 60%)',
+  'wrong way': 'hsl(350, 80%, 62%)',
+};
+
+interface Group {
+  variant: string;
+  slot: string;
+  runs: number;
+  devices: number;
+  time: { median: number | null; p90: number | null; best: number | null };
+  reaction: { median: number | null; p90: number | null };
+  beatR: number | null;
+  anticipation: number | null;
+  countIn: { onsets: number | null; r: number | null };
+  deaths: Record<string, number>;
+}
+
+interface StatsData {
+  since: number | null;
+  hours: number | null;
+  variant: string | null;
+  marker: { kind: 'timestamp'; at: number } | { kind: 'build'; build: string } | null;
+  rows: number;
+  truncated: boolean;
+  groups: Group[];
+}
+
+/** The query the page was opened with, forwarded to the endpoint as given. */
+function statsQuery(): string {
+  try {
+    const p = new URLSearchParams(location.search);
+    const out = new URLSearchParams();
+    for (const k of PASS_THROUGH) {
+      const v = p.get(k);
+      if (v) out.set(k, v);
+    }
+    const s = out.toString();
+    return s ? '?' + s : '';
+  } catch {
+    return '';
+  }
+}
+
+const page: CSSProperties = {
+  minHeight: '100vh',
+  background: '#000',
+  color: '#fff',
+  fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2vh',
+  padding: '3vh 3vw',
+  boxSizing: 'border-box',
+};
+const title: CSSProperties = { fontSize: '4vh', fontWeight: 800, letterSpacing: '0.35em', textAlign: 'center' };
+const subline: CSSProperties = { fontSize: '2vh', letterSpacing: '0.15em', opacity: 0.6, textAlign: 'center' };
+const columns = 'minmax(14em, 2fr) 2.2em 4em 4.5em 7.5em 7.5em 4.5em 4.5em 5em minmax(10em, 1.5fr)';
+const headRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: columns,
+  gap: '1em',
+  fontSize: '1.7vh',
+  letterSpacing: '0.15em',
+  opacity: 0.5,
+  padding: '0 0 1vh',
+  borderBottom: '1px solid rgba(255,255,255,0.15)',
+};
+const row: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: columns,
+  gap: '1em',
+  fontSize: '2.3vh',
+  lineHeight: 1.4,
+  alignItems: 'center',
+  padding: '1.2vh 0',
+  borderBottom: '1px solid rgba(255,255,255,0.08)',
+};
+const footer: CSSProperties = { marginTop: 'auto', fontSize: '1.8vh', opacity: 0.45, textAlign: 'center', letterSpacing: '0.1em' };
+
+const num = (v: number | null, digits = 2) => (v === null ? DASH : v.toFixed(digits));
+const pair = (a: number | null, b: number | null, digits: number) => (
+  <span>
+    {num(a, digits)} <span style={{ opacity: 0.5 }}>· {num(b, digits)}</span>
+  </span>
+);
+
+function windowLabel(d: StatsData): string {
+  const parts: string[] = [];
+  if (d.marker?.kind === 'build') parts.push(d.since === null ? `BUILD ${d.marker.build} · NO RUNS` : `SINCE BUILD ${d.marker.build}`);
+  else if (d.marker?.kind === 'timestamp') parts.push('SINCE ' + new Date(d.marker.at).toLocaleString());
+  if (d.hours !== null) parts.push(`LAST ${d.hours}H`);
+  if (d.variant !== null) parts.push(`VARIANT ${d.variant}`);
+  return parts.join(' · ');
+}
+
+function DeathBar({ deaths, runs }: { deaths: Record<string, number>; runs: number }) {
+  return (
+    <div
+      style={{ display: 'flex', height: '2.2vh', width: '100%', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}
+      title={DEATH_ORDER.map((d) => `${d} ${deaths[d] ?? 0}`).join(' · ')}
+    >
+      {DEATH_ORDER.map((d) => {
+        const n = deaths[d] ?? 0;
+        return n > 0 && runs > 0 ? <div key={d} style={{ width: `${(100 * n) / runs}%`, background: DEATH_COLOR[d] }} /> : null;
+      })}
+    </div>
+  );
+}
+
+export default function Stats() {
+  const [data, setData] = useState<StatsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const query = statsQuery();
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${BOARD_URL}/stats${query}`);
+        if (!res.ok) throw new Error('board answered ' + res.status);
+        const next = (await res.json()) as StatsData;
+        if (!stopped) {
+          setData(next);
+          setError(null);
+        }
+      } catch (err) {
+        if (!stopped) setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    poll();
+    const timer = setInterval(poll, POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const totalRuns = data?.groups.reduce((n, g) => n + g.runs, 0) ?? 0;
+  const label = data ? windowLabel(data) : '';
+
+  return (
+    <div style={page}>
+      <div style={title}>FLOTATO · STATS</div>
+      {data && (
+        <div style={subline}>
+          {label}
+          {label ? ' · ' : ''}
+          {totalRuns} RUNS · {data.groups.length} VARIANTS
+          {data.truncated ? ` · FIRST ${data.rows} ROWS ONLY` : ''}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '2em', justifyContent: 'center', fontSize: '1.8vh', opacity: 0.75 }}>
+        {DEATH_ORDER.map((d) => (
+          <span key={d}>
+            <span style={{ display: 'inline-block', width: '1.2em', height: '1.2em', verticalAlign: '-0.2em', marginRight: '0.5em', background: DEATH_COLOR[d] }} />
+            {d}
+          </span>
+        ))}
+      </div>
+
+      <div>
+        <div style={headRow}>
+          <span>VARIANT</span>
+          <span>AB</span>
+          <span>RUNS</span>
+          <span>PLAYERS</span>
+          <span>TIME MED · P90</span>
+          <span>REACT MED · P90</span>
+          <span>BEAT R</span>
+          <span>ANTIC</span>
+          <span>COUNT-IN R</span>
+          <span>DEATHS</span>
+        </div>
+        {data && data.groups.length === 0 && <div style={{ ...row, display: 'block', opacity: 0.5 }}>no runs in the window</div>}
+        {data?.groups.map((g) => (
+          <div key={g.variant + ' ' + g.slot} style={row}>
+            <span style={{ overflowWrap: 'anywhere', fontSize: '2vh', opacity: g.variant === 'default' ? 0.6 : 1 }}>{g.variant}</span>
+            <span style={{ opacity: 0.6 }}>{g.slot}</span>
+            <span style={{ fontWeight: 800 }}>{g.runs}</span>
+            <span>{g.devices}</span>
+            {pair(g.time.median, g.time.p90, 1)}
+            {pair(g.reaction.median, g.reaction.p90, 2)}
+            <span>{num(g.beatR)}</span>
+            <span>{num(g.anticipation)}</span>
+            <span>{num(g.countIn.r)}</span>
+            <DeathBar deaths={g.deaths} runs={g.runs} />
+          </div>
+        ))}
+      </div>
+
+      <div style={footer}>{error ? 'board unreachable · ' + error : data ? 'live · refreshes every ' + POLL_MS / 1000 + 's' : 'loading'}</div>
+    </div>
+  );
+}

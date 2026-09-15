@@ -11,6 +11,10 @@ export const DEFAULT_WINDOW_HOURS = 12;
 export const MAX_WINDOW_HOURS = 24 * 30;
 /** Rows read to compute medians; the window rarely holds more in one evening. */
 export const STATS_ROWS = 500;
+/** Rows read for the per-variant stats; a whole demo evening fits, a month may not. */
+export const STATS_MAX_ROWS = 5000;
+/** How long a /stats answer is reused before D1 is read again. */
+export const STATS_CACHE_MS = 30 * 1000;
 
 export const DEATH_CLASSES = ['jitter', 'overshoot', 'wrong way', 'freeze', 'late'] as const;
 export type DeathClass = (typeof DEATH_CLASSES)[number];
@@ -137,6 +141,16 @@ export function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/** The p-quantile (0..1) with linear interpolation between order statistics; null when empty. */
+export function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const pos = Math.min(Math.max(p, 0), 1) * (sorted.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
 export interface StatsRow {
   device: string;
   time: number;
@@ -170,6 +184,113 @@ export function computeStats(rows: StatsRow[]): BoardStats {
     if (r.beat_r !== null) beats.push(r.beat_r);
   }
   return { runs: rows.length, devices: devices.size, best, reactionMedian: median(reactions), beatR: median(beats), deaths };
+}
+
+export interface StatsQuery {
+  /** The window in hours, or null when a since marker alone sets the start. */
+  hours: number | null;
+  /** Exact-match filter on the variant column, or null for every variant. */
+  variant: string | null;
+  /** A session marker: a ms timestamp, or a build id whose first run starts the window. */
+  since: { kind: 'timestamp'; at: number } | { kind: 'build'; build: string } | null;
+}
+
+/**
+ * Parses /stats parameters. `hours` clamps like the board's; `since` is a ms
+ * timestamp (all digits) or a build id. A marker replaces the default window;
+ * with both given, the later start wins.
+ */
+export function parseStatsQuery(params: URLSearchParams): StatsQuery {
+  const variantRaw = params.get('variant');
+  const variant = variantRaw ? variantRaw.slice(0, MAX_STRING) : null;
+  const sinceRaw = (params.get('since') ?? '').trim();
+  let since: StatsQuery['since'] = null;
+  if (/^\d{10,}$/.test(sinceRaw)) since = { kind: 'timestamp', at: Number(sinceRaw) };
+  else if (sinceRaw) since = { kind: 'build', build: sinceRaw.slice(0, MAX_STRING) };
+  const hours = since && !params.has('hours') ? null : parseBoardQuery(params).hours;
+  return { hours, variant, since };
+}
+
+/** The columns /stats reads per run. */
+export interface VariantRow {
+  variant: string;
+  slot: string;
+  device: string;
+  time: number;
+  death: string;
+  reaction_median: number | null;
+  reaction_p90: number | null;
+  anticipation: number | null;
+  beat_r: number | null;
+  countin_onsets: number | null;
+  countin_r: number | null;
+}
+
+export interface VariantStats {
+  variant: string;
+  slot: string;
+  runs: number;
+  devices: number;
+  time: { median: number | null; p90: number | null; best: number | null };
+  /** Medians of the per-run reaction median and p90. */
+  reaction: { median: number | null; p90: number | null };
+  beatR: number | null;
+  anticipation: number | null;
+  countIn: { onsets: number | null; r: number | null };
+  deaths: Record<string, number>;
+}
+
+/** One group per (variant, slot), sorted by runs then variant, each with its medians and death histogram. */
+export function computeVariantStats(rows: VariantRow[]): VariantStats[] {
+  interface Acc {
+    variant: string;
+    slot: string;
+    devices: Set<string>;
+    times: number[];
+    reactionMedians: number[];
+    reactionP90s: number[];
+    anticipations: number[];
+    beats: number[];
+    countInOnsets: number[];
+    countInRs: number[];
+    deaths: Record<string, number>;
+  }
+  const groups = new Map<string, Acc>();
+  for (const r of rows) {
+    const key = r.variant + '\u0000' + r.slot;
+    let g = groups.get(key);
+    if (!g) {
+      g = { variant: r.variant, slot: r.slot, devices: new Set(), times: [], reactionMedians: [], reactionP90s: [], anticipations: [], beats: [], countInOnsets: [], countInRs: [], deaths: {} };
+      for (const d of DEATH_CLASSES) g.deaths[d] = 0;
+      groups.set(key, g);
+    }
+    g.devices.add(r.device);
+    g.times.push(r.time);
+    g.deaths[r.death] = (g.deaths[r.death] ?? 0) + 1;
+    if (r.reaction_median !== null) g.reactionMedians.push(r.reaction_median);
+    if (r.reaction_p90 !== null) g.reactionP90s.push(r.reaction_p90);
+    if (r.anticipation !== null) g.anticipations.push(r.anticipation);
+    if (r.beat_r !== null) g.beats.push(r.beat_r);
+    if (r.countin_onsets !== null) g.countInOnsets.push(r.countin_onsets);
+    if (r.countin_r !== null) g.countInRs.push(r.countin_r);
+  }
+  const out: VariantStats[] = [];
+  for (const g of groups.values()) {
+    out.push({
+      variant: g.variant,
+      slot: g.slot,
+      runs: g.times.length,
+      devices: g.devices.size,
+      time: { median: median(g.times), p90: percentile(g.times, 0.9), best: g.times.length ? Math.max(...g.times) : null },
+      reaction: { median: median(g.reactionMedians), p90: median(g.reactionP90s) },
+      beatR: median(g.beats),
+      anticipation: median(g.anticipations),
+      countIn: { onsets: median(g.countInOnsets), r: median(g.countInRs) },
+      deaths: g.deaths,
+    });
+  }
+  out.sort((a, b) => b.runs - a.runs || a.variant.localeCompare(b.variant) || a.slot.localeCompare(b.slot));
+  return out;
 }
 
 /** The browser origins allowed to read and write: the Pages site, and local dev servers. */
