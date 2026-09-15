@@ -4,6 +4,7 @@ import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from
 import { createObserver, type Observer, type RunSummary } from './player/observer';
 import { createInput, type Side } from './input';
 import { clearBest, loadBest, saveBest } from './best';
+import { reportPhase } from './update';
 import { diffLabel } from './tuning/chips';
 import { appendRun, clearRuns, loadRuns, saveRuns, type RunRecord, type Slot } from './tuning/runlog';
 import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
@@ -188,6 +189,7 @@ export default function Flotato() {
 
   useEffect(() => {
     phaseRef.current = phase;
+    reportPhase(phase);
   }, [phase]);
 
   useEffect(() => {
