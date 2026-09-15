@@ -42,7 +42,14 @@ interface StatsData {
   groups: Group[];
 }
 
-/** The query the page was opened with, forwarded to the endpoint as given. */
+interface PrefsData {
+  verdicts: number;
+  walks: number;
+  steps: { id: string; A: number; B: number; same: number; skip: number; n: number }[];
+  finals: { diff: string; n: number }[];
+}
+
+/** The query the page was opened with, forwarded to the endpoints as given. */
 function statsQuery(): string {
   try {
     const p = new URLSearchParams(location.search);
@@ -56,6 +63,12 @@ function statsQuery(): string {
   } catch {
     return '';
   }
+}
+
+async function fetchJson<T>(route: string, query: string): Promise<T> {
+  const res = await fetch(`${BOARD_URL}${route}${query}`);
+  if (!res.ok) throw new Error('board answered ' + res.status);
+  return (await res.json()) as T;
 }
 
 const page: CSSProperties = {
@@ -87,8 +100,11 @@ const row: CSSProperties = {
 const headRow: CSSProperties = { ...row, alignItems: 'end', padding: '0 0 1vh', borderBottom: '1px solid rgba(255,255,255,0.15)' };
 const headCell: CSSProperties = { fontSize: '1.7vh', letterSpacing: '0.15em', opacity: 0.5 };
 const footer: CSSProperties = { marginTop: 'auto', fontSize: '1.8vh', opacity: 0.45, textAlign: 'center', letterSpacing: '0.1em' };
+const prefsHeading: CSSProperties = { fontSize: '2vh', letterSpacing: '0.25em', opacity: 0.55, marginBottom: '1vh' };
+const prefsLine: CSSProperties = { fontSize: '2.1vh', lineHeight: 1.6, display: 'grid', gridTemplateColumns: '9em auto', gap: '1em' };
 
 const num = (v: number | null, digits = 2) => (v === null ? DASH : v.toFixed(digits));
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'S'}`;
 const pair = (a: number | null, b: number | null, digits: number) => (
   <span>
     {num(a, digits)} <span style={{ opacity: 0.5 }}>· {num(b, digits)}</span>
@@ -118,8 +134,37 @@ function DeathBar({ deaths, runs }: { deaths: Record<string, number>; runs: numb
   );
 }
 
+/** The guided listen's verdicts in the window: per step, how the room split; the walks' most common picks. */
+function Prefs({ prefs }: { prefs: PrefsData }) {
+  return (
+    <div>
+      <div style={prefsHeading}>
+        GUIDED LISTEN · {plural(prefs.verdicts, 'VERDICT')} · {plural(prefs.walks, 'WALK')}
+      </div>
+      {prefs.steps.length === 0 && <div style={{ ...prefsLine, display: 'block', opacity: 0.5 }}>no verdicts in the window</div>}
+      {prefs.steps.map((s) => (
+        <div key={s.id} style={prefsLine}>
+          <span style={{ opacity: 0.7 }}>{s.id}</span>
+          <span>
+            A <b>{s.A}</b> · B <b>{s.B}</b> · same <b>{s.same}</b> · skip <b>{s.skip}</b>
+          </span>
+        </div>
+      ))}
+      {prefs.finals.map((f) => (
+        <div key={f.diff} style={{ ...prefsLine, opacity: 0.8 }}>
+          <span style={{ opacity: 0.7 }}>{f === prefs.finals[0] ? 'picks' : ''}</span>
+          <span style={{ overflowWrap: 'anywhere' }}>
+            <b>{f.n}</b> × {f.diff}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Stats() {
   const [data, setData] = useState<StatsData | null>(null);
+  const [prefs, setPrefs] = useState<PrefsData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -127,11 +172,10 @@ export default function Stats() {
     let stopped = false;
     const poll = async () => {
       try {
-        const res = await fetch(`${BOARD_URL}/stats${query}`);
-        if (!res.ok) throw new Error('board answered ' + res.status);
-        const next = (await res.json()) as StatsData;
+        const [nextStats, nextPrefs] = await Promise.all([fetchJson<StatsData>('/stats', query), fetchJson<PrefsData>('/prefs/summary', query)]);
         if (!stopped) {
-          setData(next);
+          setData(nextStats);
+          setPrefs(nextPrefs);
           setError(null);
         }
       } catch (err) {
@@ -196,6 +240,8 @@ export default function Stats() {
           </div>
         ))}
       </div>
+
+      {prefs && <Prefs prefs={prefs} />}
 
       <div style={footer}>{error ? 'board unreachable · ' + error : data ? 'live · refreshes every ' + POLL_MS / 1000 + 's' : 'loading'}</div>
     </div>
