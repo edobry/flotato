@@ -33,6 +33,9 @@ export interface MusicEngine {
   /** Call from inside a user gesture handler; loads the engine and resumes the AudioContext. */
   unlock(): void;
   start(): void;
+  /** Hold the Transport where it is (page hidden); resume() continues from the same position. */
+  pause(): void;
+  resume(): void;
   die(): void;
   best(): void;
   /** A gap was threaded or a wall dodged: the reward accent. */
@@ -47,6 +50,16 @@ export interface MusicEngine {
   setMuted(m: boolean): void;
   setTuning(t: Tuning): void;
   dispose(): void;
+}
+
+/** iOS 17+ mutes Web Audio with the ring/silent switch unless the page asks for a playback session. */
+function claimPlaybackSession(): void {
+  try {
+    const session = (navigator as { audioSession?: { type: string } }).audioSession;
+    if (session && session.type !== 'playback') session.type = 'playback';
+  } catch {
+    /* not supported */
+  }
 }
 
 function createNativeContext(): AudioContext | null {
@@ -72,6 +85,7 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
 
   function unlock() {
     if (disposed) return;
+    claimPlaybackSession();
     if (impl) {
       impl.unlock();
       return;
@@ -114,6 +128,12 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
     start() {
       if (impl) impl.start();
       else pendingStart = true;
+    },
+    pause() {
+      impl?.pause();
+    },
+    resume() {
+      impl?.resume();
     },
     die() {
       pendingStart = false;

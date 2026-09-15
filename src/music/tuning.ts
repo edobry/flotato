@@ -23,6 +23,10 @@ export interface Tuning {
   deathMode: 'stop' | 'drone';
   /** Lock the visual pulse to the Transport beat. */
   beatPulse: boolean;
+  /** Added to the audio output latency when placing the visual pulse; trim by ear on Bluetooth. */
+  beatOffsetMs: number;
+  /** Bars of audible beat before the first wall spawns. 0 is Super Hexagon: walls at once. */
+  countInBars: number;
   /** Start each run at a random bar so retries never replay an intro. */
   randomStartOffset: boolean;
   /** A short punctuation and a pattern transform every 10 seconds survived. */
@@ -52,6 +56,8 @@ export const DEFAULT_TUNING: Tuning = {
   foreshadow: false,
   deathMode: 'stop',
   beatPulse: true,
+  beatOffsetMs: 0,
+  countInBars: 1,
   randomStartOffset: true,
   milestones: true,
   arpPan: false,

@@ -13,6 +13,7 @@ import { ROOT_MIDI, SCALES, degreeToHz, midiToHz } from './scale';
 import { type Pattern, degradeBy, every, fast, fmap, off, rev, sometimesBy, withCtx } from './pattern';
 import { mini } from './mini';
 import { createVoices, type Voices } from './voices';
+import { offsetBeatPhase } from './beat';
 
 interface Ctx {
   s: Snapshot;
@@ -192,6 +193,27 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
     t.start(now + 0.03);
   }
 
+  function pause() {
+    if (!ready || !running) return;
+    const t = tr();
+    if (t.state === 'started') t.pause();
+  }
+
+  function resume() {
+    if (!ready || !running) return;
+    const t = tr();
+    if (t.state !== 'paused') return;
+    // The game freezes walls through a count-in on resume, so figures scheduled
+    // before the pause would now land early.
+    clearFore();
+    // iOS suspends the context in the background; resuming after the page's first
+    // gesture needs no new one.
+    Tone.start().catch(() => {
+      /* the next gesture retries through unlock() */
+    });
+    t.start();
+  }
+
   function die() {
     const v = voices;
     if (!v || !running) return;
@@ -274,6 +296,8 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
   return {
     unlock,
     start,
+    pause,
+    resume,
     die,
     best,
     thread,
@@ -286,7 +310,11 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
       if (!ready || !running) return -1;
       const t = tr();
       if (t.state !== 'started') return -1;
-      return (t.ticks % t.PPQ) / t.PPQ;
+      // Transport time is scheduling time; the ear gets it after the output latency.
+      const raw = (t.ticks % t.PPQ) / t.PPQ;
+      const rc = Tone.getContext().rawContext as Partial<AudioContext>;
+      const latency = (rc.outputLatency ?? 0) + (rc.baseLatency ?? 0) + tuning.beatOffsetMs / 1000;
+      return offsetBeatPhase(raw, t.bpm.value, latency);
     },
     setMuted(m) {
       muted = m;

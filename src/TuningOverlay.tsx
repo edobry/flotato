@@ -11,6 +11,8 @@ const RANGES: Record<NumKey, [min: number, max: number, step: number]> = {
   tension: [0, 1, 0.05],
   reward: [0, 1, 0.05],
   volume: [-30, 0, 1],
+  beatOffsetMs: [-150, 300, 5],
+  countInBars: [0, 4, 1],
   dangerOnset: [0, 0.8, 0.05],
 };
 
@@ -24,10 +26,10 @@ const ENUMS: Partial<Record<keyof Tuning, readonly string[]>> = {
 
 const panel: CSSProperties = {
   position: 'absolute',
-  top: 44,
-  left: 12,
+  top: 'calc(44px + var(--sat))',
+  left: 'calc(12px + var(--sal))',
   width: 260,
-  maxHeight: 'calc(100vh - 60px)',
+  maxHeight: 'calc(100dvh - 60px - var(--sat) - var(--sab))',
   overflowY: 'auto',
   padding: '10px 12px',
   background: 'rgba(0,0,0,0.78)',

@@ -17,7 +17,18 @@ settled design decisions live in `CLAUDE.md` and the linked Notion page.
 ## Controls
 
 Hold the left or right half of the screen, or use the arrow keys / A and D.
-Tap or press Space to start and to retry. M mutes. T opens the tuning overlay.
+The most recent press wins: holding left and pressing right reverses at once,
+and lifting the right thumb hands control back to the left one. Tap or press
+Space to start and to retry. M mutes. T opens the tuning overlay.
+
+A run opens with one bar of beat before the first wall (`countInBars`; 0 is
+Super Hexagon's immediate start). You can take position during it. After a
+death, taps and keys are ignored for 0.7 s so a thumb still held does not
+restart the run before the time is read. Hiding the page (lock screen, a
+notification, another tab) pauses the run and the music together; coming back
+resumes through the same count-in. On phones the key hints are not shown. On
+iOS 17 and later the game claims a playback audio session, so the ring/silent
+switch does not mute it; on older iOS it does, and the title screen says so.
 
 ## Music
 
@@ -30,7 +41,10 @@ and a new best gets a stinger. The visual pulse locks to the beat.
 Every mapping has a knob. Press T (or open `?tune`) for the tuning overlay; the
 values persist in local storage and can be set from the URL as
 `?tune=reactivity=0.5,drums=false`. `reactivity=0` turns the engine into a
-metronome, which is what Super Hexagon does.
+metronome, which is what Super Hexagon does. The visual pulse is placed on
+the audible beat by shifting the Transport phase by the audio output latency;
+`beatOffsetMs` adds a manual trim for Bluetooth output, where the reported
+latency can be short of the real one.
 
 Patterns are written in a small Tidal-style mini-notation (`src/music/mini.ts`)
 over a pure pattern core (`src/music/pattern.ts`) whose query model matches
