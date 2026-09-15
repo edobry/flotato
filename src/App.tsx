@@ -755,7 +755,7 @@ export default function Flotato() {
       if (ghostOn() && phaseRef.current === 'playing') tags.push('GHOST');
       if (slotRef.current && phaseRef.current === 'playing') tags.push(slotRef.current);
       if (mutedRef.current) tags.push(touchRef.current ? 'MUTED' : 'MUTED  M');
-      else if (!touchRef.current) tags.push('M mute  T tune');
+      else if (!touchRef.current) tags.push(guideModeRef.current ? 'M mute' : 'M mute  T tune');
       const hint = tags.join('   ');
       if (hint) {
         ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
