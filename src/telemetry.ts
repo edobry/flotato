@@ -1,8 +1,10 @@
 // Runs leave the phone: one POST per run to the board Worker, fire-and-forget.
 // The game never waits on the network; a failed post is a console warning.
+// The guided listen's verdicts go the same way, so preferences aggregate.
 
 import type { RunSummary } from './player/observer';
 import type { Tuning } from './music/tuning';
+import type { Verdict } from './tuning/guide';
 import { BOARD_URL, SITE_ORIGIN } from './config';
 
 export const TAG_LENGTH = 3;
@@ -104,31 +106,50 @@ export function buildId(): string {
   }
 }
 
-let warned = false;
+const warned = new Set<string>();
 
-/** Sends the run; resolves to its rank in the board window, or null when anything went wrong. */
-export async function postRun(post: RunPost): Promise<Rank | null> {
+/** One JSON POST to the board Worker with a timeout; the first failure per route warns once. */
+async function post(route: string, body: unknown): Promise<Response | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
   try {
-    const res = await fetch(BOARD_URL + '/run', {
+    const res = await fetch(BOARD_URL + route, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(post),
+      body: JSON.stringify(body),
       keepalive: true,
       signal: controller.signal,
     });
     if (!res.ok) throw new Error('board answered ' + res.status);
-    const data = (await res.json()) as Partial<Rank>;
-    if (typeof data.rank !== 'number' || typeof data.total !== 'number') return null;
-    return { rank: data.rank, total: data.total, tag: typeof data.tag === 'string' ? data.tag : post.tag };
+    return res;
   } catch (err) {
-    if (!warned) {
-      warned = true;
-      console.warn('[flotato] run not posted:', err instanceof Error ? err.message : String(err));
+    if (!warned.has(route)) {
+      warned.add(route);
+      console.warn(`[flotato] ${route} not posted:`, err instanceof Error ? err.message : String(err));
     }
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Sends the run; resolves to its rank in the board window, or null when anything went wrong. */
+export async function postRun(run: RunPost): Promise<Rank | null> {
+  const res = await post('/run', run);
+  if (!res) return null;
+  try {
+    const data = (await res.json()) as Partial<Rank>;
+    if (typeof data.rank !== 'number' || typeof data.total !== 'number') return null;
+    return { rank: data.rank, total: data.total, tag: typeof data.tag === 'string' ? data.tag : run.tag };
+  } catch {
+    return null;
+  }
+}
+
+/** Posts one guided-listen verdict and, when it completed the walk, the discovered diff; nothing awaits it. */
+export function postGuide(step: string, verdict: Verdict, base: Partial<Tuning>, finished: boolean): void {
+  const device = deviceId();
+  const build = buildId();
+  void post('/prefs', { device, build, step, verdict, base });
+  if (finished) void post('/prefs', { device, build, final: base });
 }
