@@ -123,6 +123,14 @@ run carries), so one session can be read on its own:
 `/board/?view=stats&since=9178ffc`. The Worker reads at most
 5000 rows per answer and caches each answer for 30 s; the page polls every 30 s.
 
+The guided listen posts its verdicts the same way, under the same `telemetry`
+rule: `POST /prefs` takes `{ device, step, verdict, base }` per verdict and
+`{ device, final }` when a walk completes, into a `prefs` table (migration
+`0002_prefs.sql`; `worker:reset` leaves it alone). `GET /prefs/summary` takes
+the same `hours` and `since` as `/stats` and reports, per step, how many chose
+A, B, couldn't tell or skipped, plus the most common discovered tunings; the
+stats view shows those numbers under the table.
+
 ## The room
 
 One field for a whole room: https://edobry.github.io/flotato/room/ on the

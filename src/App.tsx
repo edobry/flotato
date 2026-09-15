@@ -7,7 +7,7 @@ import { clearBest, loadBest, saveBest } from './best';
 import { diffLabel } from './tuning/chips';
 import { appendRun, clearRuns, loadRuns, saveRuns, type RunRecord, type Slot } from './tuning/runlog';
 import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
-import { buildId, cleanTag, deviceId, loadTag, postRun, randomTag, saveTag, telemetryAllowed, type Rank } from './telemetry';
+import { buildId, cleanTag, deviceId, loadTag, postGuide, postRun, randomTag, saveTag, telemetryAllowed, type Rank } from './telemetry';
 import TuningOverlay from './TuningOverlay';
 import TuneSheet from './TuneSheet';
 import GuideSheet from './GuideSheet';
@@ -866,6 +866,7 @@ export default function Flotato() {
     if (!guideStep) return;
     const next = applyVerdict(guide, guideStep, verdict);
     console.info('[flotato] guide', JSON.stringify({ step: guideStep.id, verdict, base: next.base }));
+    if (tuningRef.current.telemetry && telemetryAllowed()) postGuide(guideStep.id, verdict, next.base, nextStep(next) === null);
     updateGuide(next);
     setHeard({ id: '', A: false, B: false });
   };
