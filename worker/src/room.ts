@@ -1,14 +1,15 @@
 // The room: one Durable Object per room code, relaying between the pads in
-// people's hands and the host on the projector. It holds the roster and the
-// last state the host announced; it runs no game logic. WebSocket hibernation
-// keeps idle connections free, so everything a wake needs lives in storage or
-// in each socket's attachment.
+// people's hands and the host on the projector. It holds the roster, the
+// round count and the last state the host announced; it runs no game logic.
+// WebSocket hibernation keeps idle connections free, so everything a wake
+// needs lives in storage or in each socket's attachment.
 //
 // Frames are JSON text. Pad → room: join { name, id }, ready { ready },
-// dir { d }, ping. Host → room: host {}, state { ... } (opaque, relayed).
-// Room → host: roster { players }, joined { player }, left { id },
-// ready { id, ready }, dir { id, d }. Room → pad: welcome { you, players,
-// state }, state { ... }, roster { players }.
+// dir { d }, ping. Host → room: state { round, ... } (relayed; the round is
+// kept), reset {}, ping. Room → host: roster { players, round }, joined
+// { player }, left { id }, ready { id, ready }, dir { id, d }, pong. Room →
+// pad: welcome { you, players, state, host }, state { ... }, roster
+// { players }, host { up }, pong.
 
 import { DurableObject } from 'cloudflare:workers';
 
@@ -54,6 +55,8 @@ function tagOf(name: string): string {
 export class Room extends DurableObject {
   private roster: Roster | null = null;
   private lastState: unknown = null;
+  /** The highest round the host has announced; -1 until read from storage. */
+  private round = -1;
 
   private async players(): Promise<Roster> {
     if (this.roster) return this.roster;
@@ -70,6 +73,24 @@ export class Room extends DurableObject {
 
   private async save(): Promise<void> {
     if (this.roster) await this.ctx.storage.put('roster', this.roster);
+  }
+
+  private async roundNumber(): Promise<number> {
+    if (this.round < 0) this.round = (await this.ctx.storage.get<number>('round')) ?? 0;
+    return this.round;
+  }
+
+  /** A host reload starts counting from what the room remembers; the count only ever rises. */
+  private async keepRound(raw: unknown): Promise<void> {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return;
+    const round = Math.floor(raw);
+    if (round <= (await this.roundNumber())) return;
+    this.round = round;
+    await this.ctx.storage.put('round', round);
+  }
+
+  private hostPresent(): boolean {
+    return this.ctx.getWebSockets('host').length > 0;
   }
 
   private send(ws: WebSocket, msg: unknown): void {
@@ -104,7 +125,8 @@ export class Room extends DurableObject {
         if (ws !== server) ws.close(4000, 'replaced by a newer host');
       }
       const players = await this.players();
-      this.send(server, { t: 'roster', players: Object.values(players) });
+      this.send(server, { t: 'roster', players: Object.values(players), round: await this.roundNumber() });
+      this.broadcast('pad', { t: 'host', up: true });
     }
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -122,13 +144,14 @@ export class Room extends DurableObject {
     }
     if (!isObject(msg) || typeof msg.t !== 'string') return;
     const att = (ws.deserializeAttachment() as Attachment | null) ?? { role: 'pad' };
-    if (att.role === 'host') return this.fromHost(msg);
+    if (att.role === 'host') return this.fromHost(ws, msg);
     return this.fromPad(ws, att, msg);
   }
 
-  private async fromHost(msg: Record<string, unknown>): Promise<void> {
+  private async fromHost(ws: WebSocket, msg: Record<string, unknown>): Promise<void> {
     if (msg.t === 'state') {
       this.lastState = msg;
+      await this.keepRound(msg.round);
       this.broadcast('pad', msg);
     } else if (msg.t === 'reset') {
       // A new round: every ready flag clears; the host tells pads through state.
@@ -136,6 +159,8 @@ export class Room extends DurableObject {
       for (const p of Object.values(players)) p.ready = false;
       await this.save();
       this.broadcast('pad', { t: 'roster', players: Object.values(players) });
+    } else if (msg.t === 'ping') {
+      this.send(ws, { t: 'pong' });
     }
   }
 
@@ -162,7 +187,7 @@ export class Room extends DurableObject {
       players[id] = player;
       ws.serializeAttachment({ role: 'pad', id } satisfies Attachment);
       await this.save();
-      this.send(ws, { t: 'welcome', you: player, players: Object.values(players), state: this.lastState });
+      this.send(ws, { t: 'welcome', you: player, players: Object.values(players), state: this.lastState, host: this.hostPresent() });
       this.broadcast('host', { t: existing ? 'rejoined' : 'joined', player });
       this.broadcast('pad', { t: 'roster', players: Object.values(players) });
       return;
@@ -186,8 +211,19 @@ export class Room extends DurableObject {
     }
   }
 
-  async webSocketClose(ws: WebSocket): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     await this.dropped(ws);
+    // The peer closed: finish the handshake on this side, or its socket sits in CLOSING and never reconnects
+    // (the hibernation API's documented pattern: the handler calls ws.close() to complete the close).
+    try {
+      ws.close(code, reason);
+    } catch {
+      try {
+        ws.close(1000, 'closed');
+      } catch {
+        /* already gone */
+      }
+    }
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
@@ -196,6 +232,11 @@ export class Room extends DurableObject {
 
   private async dropped(ws: WebSocket): Promise<void> {
     const att = ws.deserializeAttachment() as Attachment | null;
+    if (att?.role === 'host') {
+      // The projector went away (unless a newer one already replaced it); pads say so.
+      if (!this.ctx.getWebSockets('host').some((other) => other !== ws)) this.broadcast('pad', { t: 'host', up: false });
+      return;
+    }
     if (!att || att.role !== 'pad' || !att.id) return;
     const players = await this.players();
     const player = players[att.id];

@@ -50,7 +50,11 @@ Read it before starting a new task.
    cellular-automaton glyph, and sends hold-left/right through a Durable
    Object relay. Deferred by it: the single-player staged entry (mt#5176),
    since the lobby is the staged entry. Later modes floated: tilt and body
-   input, each a richer sensor for the player model.
+   input, each a richer sensor for the player model. Polish landed in
+   mt#5190 (round number kept by the room, standings on fallen pads,
+   next-lobby countdown, host keys, reconnects on both ends); its package
+   mt#5201 continues with tilt input (mt#5191) and the pad as a private
+   feedback channel (mt#5192).
 7. Mobile polish / PWA manifest / service worker (the crowd-facing
    prerequisites landed in mt#5173; manifest and service worker remain)
 8. localStorage best-time persistence: done (mt#5196). `flotato.best`, shown
