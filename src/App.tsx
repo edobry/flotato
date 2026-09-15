@@ -231,6 +231,8 @@ export default function Flotato() {
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
     let dangerPeakSec = -1;
+    // Ghost mode is a tune-mode affordance only: the knob persists, but a plain URL never honours it.
+    const ghostOn = () => tuneModeRef.current && tuningRef.current.ghost;
     // A run that started in ghost mode never sets a best or logs, even if ghost is turned off mid-run.
     let runGhost = false;
 
@@ -291,7 +293,7 @@ export default function Flotato() {
       nextMilestone = MILESTONE_S;
       dangerPeakT = -1;
       dangerPeakSec = -1;
-      runGhost = tuningRef.current.ghost;
+      runGhost = ghostOn();
       slotRef.current = which;
       setSlot(which);
       setFinalTime(0);
@@ -315,7 +317,7 @@ export default function Flotato() {
 
     /** The death transition. `killed` is false for a ghost run stopped on purpose. */
     const endRun = (killed: boolean) => {
-      const ghost = runGhost || tuningRef.current.ghost;
+      const ghost = runGhost || ghostOn();
       s.dead = true;
       s.flash = killed ? 0.3 : 0;
       if (killed && !ghost && s.time > bestRef.current) {
@@ -397,7 +399,7 @@ export default function Flotato() {
       } else if (c === 'KeyT') {
         setShowTuning((v) => !v);
       } else if (c === 'Escape') {
-        if (tuningRef.current.ghost) stopRef.current?.();
+        if (ghostOn()) stopRef.current?.();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -587,7 +589,7 @@ export default function Flotato() {
       observer.frame(snap, beatPhase);
 
       // collision; in ghost mode walls pass through and keep sounding
-      if (tuningRef.current.ghost) return;
+      if (ghostOn()) return;
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         if (
@@ -674,7 +676,7 @@ export default function Flotato() {
       ctx.lineTo(Math.cos(pa - spread) * baseR, Math.sin(pa - spread) * baseR);
       ctx.lineTo(Math.cos(pa + spread) * baseR, Math.sin(pa + spread) * baseR);
       ctx.closePath();
-      ctx.fillStyle = tuningRef.current.ghost ? 'hsla(' + hue + ', 90%, 82%, 0.45)' : 'hsl(' + hue + ', 90%, 82%)';
+      ctx.fillStyle = ghostOn() ? 'hsla(' + hue + ', 90%, 82%, 0.45)' : 'hsl(' + hue + ', 90%, 82%)';
       ctx.fill();
 
       ctx.restore();
@@ -690,7 +692,7 @@ export default function Flotato() {
       const right = w - HUD_MARGIN - inset.right;
       const top = 30 + inset.top;
       const tags: string[] = [];
-      if (tuningRef.current.ghost && phaseRef.current === 'playing') tags.push('GHOST');
+      if (ghostOn() && phaseRef.current === 'playing') tags.push('GHOST');
       if (slotRef.current && phaseRef.current === 'playing') tags.push(slotRef.current);
       if (mutedRef.current) tags.push(touchRef.current ? 'MUTED' : 'MUTED  M');
       else if (!touchRef.current) tags.push('M mute  T tune');

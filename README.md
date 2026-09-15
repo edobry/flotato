@@ -19,7 +19,7 @@ settled design decisions live in `CLAUDE.md` and the linked Notion page.
 Hold the left or right half of the screen, or use the arrow keys / A and D.
 The most recent press wins: holding left and pressing right reverses at once,
 and lifting the right thumb hands control back to the left one. Tap or press
-Space to start and to retry. M mutes. T opens the tuning overlay.
+Space to start and to retry. M mutes. T opens the tuning panel (see Tuning).
 
 A run opens with one bar of beat before the first wall (`countInBars`; 0 is
 Super Hexagon's immediate start). You can take position during it. After a
@@ -38,13 +38,39 @@ your lane closes the arp's filter, the sector you occupy picks the scale degree
 the arp emphasizes, threading a gap fires an accent, death sweeps the mix down,
 and a new best gets a stinger. The visual pulse locks to the beat.
 
-Every mapping has a knob. Press T (or open `?tune`) for the tuning overlay; the
-values persist in local storage and can be set from the URL as
-`?tune=reactivity=0.5,drums=false`. `reactivity=0` turns the engine into a
-metronome, which is what Super Hexagon does. The visual pulse is placed on
-the audible beat by shifting the Transport phase by the audio output latency;
-`beatOffsetMs` adds a manual trim for Bluetooth output, where the reported
-latency can be short of the real one.
+Every mapping has a knob. The values persist in local storage and can be set
+from the URL as `?tune=reactivity=0.5,drums=false`. `reactivity=0` turns the
+engine into a metronome, which is what Super Hexagon does. The visual pulse is
+placed on the audible beat by shifting the Transport phase by the audio output
+latency; `beatOffsetMs` adds a manual trim for Bluetooth output, where the
+reported latency can be short of the real one.
+
+## Tuning
+
+`?tune` in the URL is the game master's door; without it none of this exists
+and the surface stays field, time, best.
+
+On a keyboard, `?tune` opens the side panel and T toggles it; every knob is
+live while you play. On a phone, `?tune` adds a **tune** button to the title
+and game-over screens that opens a full-screen sheet between runs:
+
+- **Chips** are presets that stack: metronome, foreshadow, drone death, minor
+  hex, no drums. Each is a diff from default, so the line under them is the
+  configuration in force as a `?tune=` string (or `default`), and **copy
+  link** gives you a URL that opens with the same configuration. A slider
+  change shows up in the diff too; a chip is lit only while its keys still
+  hold.
+- **Ghost mode** runs the full game with walls passing through you, so every
+  mapping keeps sounding while nothing can kill you: the way to hear what a
+  knob does. On a phone a strip along the bottom edge turns one knob at a
+  time mid-run (stop ends the run; on a keyboard, Escape). A ghost run sets
+  no best and is not logged. Ghost is honoured only under `?tune`.
+- **A / B** saves two configurations; the game-over screen then offers
+  **again A** / **again B** so alternating takes seconds, and the HUD names
+  the slot while you play.
+- **Runs** logs every non-ghost death under `?tune` — time, configuration,
+  slot, and the run stats — to local storage (newest 300) and shows them
+  grouped by configuration with n, median and best. Copy as JSON or clear.
 
 Patterns are written in a small Tidal-style mini-notation (`src/music/mini.ts`)
 over a pure pattern core (`src/music/pattern.ts`) whose query model matches
