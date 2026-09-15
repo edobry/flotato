@@ -52,7 +52,11 @@ placed on the audible beat by shifting the Transport phase by the audio output
 latency; `beatOffsetMs` adds a manual trim for Bluetooth output, where the
 reported latency can be short of the real one. The tune sheet's first chip
 rows are listening choices for the register (tempo, scale, arp ceiling, pump,
-`register v1`), meant to be compared by ear with the A/B pair.
+`register v1`), meant to be compared by ear with the A/B pair. For a guided
+version of that, open `?tune=guide` on a phone (or tap "guide me" on the tune
+sheet): it plays configurations in pairs, asks which you prefer, walks an
+adaptive flowchart (old or new register, then tempo, scale, pulse, arp density,
+reactivity, drums), and ends with your pick applied and a link to share.
 
 ## Tuning
 

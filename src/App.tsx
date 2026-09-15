@@ -9,6 +9,8 @@ import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
 import { buildId, cleanTag, deviceId, loadTag, postRun, randomTag, saveTag, telemetryAllowed, type Rank } from './telemetry';
 import TuningOverlay from './TuningOverlay';
 import TuneSheet from './TuneSheet';
+import GuideSheet from './GuideSheet';
+import { applyVerdict, clearGuide, guideTuning, initialGuide, loadGuide, nextStep, saveGuide, sideTuning, type GuideState, type Side as GuideSide, type Verdict } from './tuning/guide';
 import GhostStrip from './GhostStrip';
 import RunStats from './RunStats';
 
@@ -80,6 +82,15 @@ function loadMuted(): boolean {
   }
 }
 
+/** `?tune=guide` opens the guided listen straight away. */
+function guideRequested(): boolean {
+  try {
+    return (new URLSearchParams(location.search).get('tune') ?? '').split(',').includes('guide');
+  } catch {
+    return false;
+  }
+}
+
 function tuningRequested(): boolean {
   try {
     return new URLSearchParams(location.search).has('tune');
@@ -139,8 +150,13 @@ export default function Flotato() {
   const [touch] = useState(coarsePointer);
   // `?tune` is the game master's door: on a fine pointer it opens the side panel, on a phone the sheet.
   const [tuneMode] = useState(tuningRequested);
-  const [showTuning, setShowTuning] = useState(() => tuningRequested() && !coarsePointer());
-  const [sheetOpen, setSheetOpen] = useState(false);
+  // On a fine pointer the side panel opens with ?tune, unless the guide was asked for: the two would overlap.
+  const [showTuning, setShowTuning] = useState(() => tuningRequested() && !coarsePointer() && !guideRequested());
+  const [sheetOpen, setSheetOpen] = useState(() => tuningRequested() && coarsePointer() && guideRequested());
+  // The guided listen: adaptive pairwise comparisons; state persists so a reload resumes.
+  const [guideMode, setGuideMode] = useState(() => tuningRequested() && guideRequested());
+  const [guide, setGuide] = useState<GuideState>(loadGuide);
+  const [heard, setHeard] = useState<{ id: string; A: boolean; B: boolean }>({ id: '', A: false, B: false });
   const [slots, setSlots] = useState<Slots>(loadSlots);
   const [runs, setRuns] = useState<RunRecord[]>(loadRuns);
   const [slot, setSlot] = useState<Slot>('');
@@ -809,14 +825,45 @@ export default function Flotato() {
     applyTuning({ ...DEFAULT_TUNING });
   };
   /** Start from a button: the gesture unlocks audio, a slot's tuning is applied first, the lockout still holds. */
-  const playFrom = (which: Slot) => {
-    if (phase === 'playing' || !retryReady) return;
-    const t = slotTuning(slots, which);
+  /** Starts a run under `t`; false when a run is on or the death lockout has not passed. */
+  const playWith = (t: Tuning | null, which: Slot): boolean => {
+    if (phase === 'playing' || !retryReady) return false;
     if (t) applyTuning(t);
     setSheetOpen(false);
     musicRef.current?.unlock();
     startRef.current?.(which);
+    return true;
   };
+  const playFrom = (which: Slot) => playWith(slotTuning(slots, which), which);
+
+  const guideStep = guideMode ? nextStep(guide) : null;
+  const updateGuide = (next: GuideState) => {
+    setGuide(next);
+    saveGuide(next);
+  };
+  const playSide = (side: GuideSide) => {
+    if (!guideStep) return;
+    // Only a run that actually started counts as heard.
+    if (!playWith({ ...sideTuning(guide, guideStep, side), ghost: guide.listen }, side)) return;
+    setHeard((h) => (h.id === guideStep.id ? { ...h, [side]: true } : { id: guideStep.id, A: side === 'A', B: side === 'B' }));
+  };
+  const giveVerdict = (verdict: Verdict) => {
+    if (!guideStep) return;
+    const next = applyVerdict(guide, guideStep, verdict);
+    console.info('[flotato] guide', JSON.stringify({ step: guideStep.id, verdict, base: next.base }));
+    updateGuide(next);
+    setHeard({ id: '', A: false, B: false });
+  };
+  const useGuide = () => {
+    applyTuning({ ...guideTuning(guide), ghost: false });
+    setGuideMode(false);
+  };
+  const restartGuide = () => {
+    clearGuide();
+    updateGuide(initialGuide());
+    setHeard({ id: '', A: false, B: false });
+  };
+
   const setSlotFromCurrent = (which: 'A' | 'B') => {
     const next = { ...slots, [which]: tuning };
     setSlots(next);
@@ -983,7 +1030,25 @@ export default function Flotato() {
       {tuneMode && touch && phase === 'playing' && tuning.ghost && !err && (
         <GhostStrip tuning={tuning} onChange={applyTuning} onStop={() => stopRef.current?.()} />
       )}
-      {tuneMode && sheetOpen && phase !== 'playing' && !err && (
+      {/* In guide mode the sheet is simply where the phone rests between runs. */}
+      {tuneMode && guideMode && phase !== 'playing' && !err && (
+        <GuideSheet
+          state={guide}
+          step={guideStep}
+          heard={heard.id === guideStep?.id ? { A: heard.A, B: heard.B } : { A: false, B: false }}
+          onPlay={playSide}
+          onVerdict={giveVerdict}
+          onListen={(listen) => updateGuide({ ...guide, listen })}
+          onUse={useGuide}
+          onRestart={restartGuide}
+          onBack={() => {
+            setGuideMode(false);
+            setSheetOpen(true);
+          }}
+          ready={retryReady}
+        />
+      )}
+      {tuneMode && sheetOpen && phase !== 'playing' && !err && !guideMode && (
         <TuneSheet
           tuning={tuning}
           onChange={applyTuning}
@@ -998,6 +1063,7 @@ export default function Flotato() {
           }}
           onPlay={playFrom}
           onClose={() => setSheetOpen(false)}
+          onGuide={() => setGuideMode(true)}
         />
       )}
       {err && (
