@@ -149,7 +149,12 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
     const target = tuning.bpmFloor + (tuning.bpmCeil - tuning.bpmFloor) * ramp;
     if (Math.abs(target - lastBpmTarget) > 0.25) {
       lastBpmTarget = target;
-      t.bpm.rampTo(target, 0.5, time);
+      // A step, not a ramp: `rampTo` from a tick callback puts linear-ramp
+      // automation on the tick grid, and Tone's getTimeOfTick can take the
+      // wrong quadratic root when a tick lands within float noise of such an
+      // event, which returns a negative time and kills the Transport. Steps
+      // never enter that branch, and 0.25 BPM is inaudible.
+      t.bpm.setValueAtTime(target, time);
     }
   }
 
