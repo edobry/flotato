@@ -152,6 +152,7 @@ export default function Host() {
     let rosterDirty = true;
     // Audio needs a gesture on this page; a round must not start silent, so auto-start waits for one.
     let gestured = false;
+    let isMuted = false;
     const sock = connectRoom<ToHost, HostOut>(room, 'host', {
       onStatus: (s) => {
         statusRef.current = s;
@@ -325,7 +326,8 @@ export default function Host() {
     };
 
     const backToLobby = () => {
-      if (parts.length > 0) {
+      // A round that reached play leaves its top three on the lobby for a moment.
+      if (parts.length > 0 && elapsed > 0) {
         recap = { round, top: sortStandings(viewPlayers()).slice(0, 3) };
         recapLeft = LOBBY_RECAP_S;
       }
@@ -608,7 +610,6 @@ export default function Host() {
     };
     raf = requestAnimationFrame(loop);
 
-    let isMuted = false;
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Enter') {
         music.unlock();
