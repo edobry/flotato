@@ -150,7 +150,8 @@ export default function Flotato() {
   const [touch] = useState(coarsePointer);
   // `?tune` is the game master's door: on a fine pointer it opens the side panel, on a phone the sheet.
   const [tuneMode] = useState(tuningRequested);
-  const [showTuning, setShowTuning] = useState(() => tuningRequested() && !coarsePointer());
+  // On a fine pointer the side panel opens with ?tune, unless the guide was asked for: the two would overlap.
+  const [showTuning, setShowTuning] = useState(() => tuningRequested() && !coarsePointer() && !guideRequested());
   const [sheetOpen, setSheetOpen] = useState(() => tuningRequested() && coarsePointer() && guideRequested());
   // The guided listen: adaptive pairwise comparisons; state persists so a reload resumes.
   const [guideMode, setGuideMode] = useState(() => tuningRequested() && guideRequested());
