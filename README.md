@@ -111,7 +111,8 @@ laptop that feeds the projector, https://edobry.github.io/flotato/pad/ on
 every phone (the lobby shows the QR). A player types a name and gets a face:
 the name is hashed, the hash seeds an elementary cellular automaton, sixteen
 rows mirrored make the glyph (`src/glyph.ts`), so the pad and the projector
-agree without sending pixels. Ready up on the phone; the host starts the round
+agree without sending pixels. Hold the phone sideways, like a gamepad (a portrait phone shows a rotate hint; Android
+Chrome locks to landscape where it can). Ready up on the phone; the host starts the round
 with Space (or the round starts itself a few seconds after everyone present is
 ready). During play the phone is a controller, hold left or right, and the
 projector is where you look; when you fall, the phone shows your time and
