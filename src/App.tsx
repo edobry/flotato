@@ -173,6 +173,8 @@ export default function Flotato() {
   const mutedRef = useRef(muted);
   const touchRef = useRef(touch);
   const tuneModeRef = useRef(tuneMode);
+  // The key handler lives in the once-created loop effect; it reads the guide's state through this.
+  const guideModeRef = useRef(guideMode);
   const slotRef = useRef<Slot>('');
   const runsRef = useRef(runs);
   const tagRef = useRef(tag);
@@ -190,6 +192,10 @@ export default function Flotato() {
     tagRef.current = tag;
     saveTag(tag);
   }, [tag]);
+
+  useEffect(() => {
+    guideModeRef.current = guideMode;
+  }, [guideMode]);
 
   useEffect(() => {
     tuningRef.current = tuning;
@@ -443,7 +449,8 @@ export default function Flotato() {
       } else if (c === 'KeyM') {
         setMuted((m) => !m);
       } else if (c === 'KeyT') {
-        setShowTuning((v) => !v);
+        // The guide owns the screen between runs; a panel opened mid-run would overlap it on death.
+        if (!guideModeRef.current) setShowTuning((v) => !v);
       } else if (c === 'Escape') {
         if (ghostOn()) stopRef.current?.();
       }
@@ -748,7 +755,7 @@ export default function Flotato() {
       if (ghostOn() && phaseRef.current === 'playing') tags.push('GHOST');
       if (slotRef.current && phaseRef.current === 'playing') tags.push(slotRef.current);
       if (mutedRef.current) tags.push(touchRef.current ? 'MUTED' : 'MUTED  M');
-      else if (!touchRef.current) tags.push('M mute  T tune');
+      else if (!touchRef.current) tags.push(guideModeRef.current ? 'M mute' : 'M mute  T tune');
       const hint = tags.join('   ');
       if (hint) {
         ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
@@ -1026,7 +1033,8 @@ export default function Flotato() {
           )}
         </div>
       )}
-      {showTuning && !err && <TuningOverlay tuning={tuning} onChange={applyTuning} onReset={resetAll} />}
+      {/* The panel yields to the guide and comes back when the guide is left. */}
+      {showTuning && !guideMode && !err && <TuningOverlay tuning={tuning} onChange={applyTuning} onReset={resetAll} />}
       {tuneMode && touch && phase === 'playing' && tuning.ghost && !err && (
         <GhostStrip tuning={tuning} onChange={applyTuning} onStop={() => stopRef.current?.()} />
       )}
