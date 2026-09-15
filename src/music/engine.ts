@@ -52,6 +52,16 @@ export interface MusicEngine {
   dispose(): void;
 }
 
+/** iOS 17+ mutes Web Audio with the ring/silent switch unless the page asks for a playback session. */
+function claimPlaybackSession(): void {
+  try {
+    const session = (navigator as { audioSession?: { type: string } }).audioSession;
+    if (session && session.type !== 'playback') session.type = 'playback';
+  } catch {
+    /* not supported */
+  }
+}
+
 function createNativeContext(): AudioContext | null {
   try {
     const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
@@ -75,6 +85,7 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
 
   function unlock() {
     if (disposed) return;
+    claimPlaybackSession();
     if (impl) {
       impl.unlock();
       return;

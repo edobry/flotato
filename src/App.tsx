@@ -90,11 +90,17 @@ function coarsePointer(): boolean {
   }
 }
 
-/** iPadOS reports itself as a Mac; the touch-point count tells them apart. */
-function isIOS(): boolean {
+/**
+ * iOS mutes Web Audio with the ring/silent switch unless the page claims a
+ * playback audio session (iOS 17+). Where it cannot, the title says so, since
+ * the symptom is indistinguishable from a broken engine. iPadOS reports itself
+ * as a Mac; the touch-point count tells them apart.
+ */
+function silentSwitchMutes(): boolean {
   try {
     const n = navigator;
-    return /iP(hone|ad|od)/.test(n.userAgent) || (n.platform === 'MacIntel' && n.maxTouchPoints > 1);
+    const ios = /iP(hone|ad|od)/.test(n.userAgent) || (n.platform === 'MacIntel' && n.maxTouchPoints > 1);
+    return ios && !('audioSession' in n);
   } catch {
     return false;
   }
@@ -126,7 +132,7 @@ export default function Flotato() {
   const [tuning, setTuning] = useState<Tuning>(loadTuning);
   const [showTuning, setShowTuning] = useState(tuningRequested);
   const [touch] = useState(coarsePointer);
-  const [ios] = useState(isIOS);
+  const [silentHint] = useState(silentSwitchMutes);
 
   const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
@@ -208,10 +214,10 @@ export default function Flotato() {
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
 
-    // Count-in: beats of audible Transport before the first wall. Counted from
-    // Transport beat wraps once it starts (absorbing the engine load on the
-    // first tap); if it has not started after the grace period, on the game
-    // clock instead, so a refused or absent audio context cannot hang the run.
+    // Count-in: beats of audible Transport before the first wall. Measured as
+    // beat phase travelled once the Transport starts (absorbing the engine load
+    // on the first tap); if it has not started after the grace period, on the
+    // game clock instead, so a refused or absent audio context cannot hang the run.
     let countInLeft = 0;
     let countInWaited = 0;
     let countInOnClock = false;
@@ -240,7 +246,7 @@ export default function Flotato() {
       if (countInLeft <= 0) return false;
       const b = beatPhase();
       if (!countInOnClock && b >= 0) {
-        if (lastBeatPhase >= 0 && b < lastBeatPhase) countInLeft -= 1;
+        if (lastBeatPhase >= 0) countInLeft -= (((b - lastBeatPhase) % 1) + 1) % 1;
         lastBeatPhase = b;
       } else {
         countInWaited += dt;
@@ -745,7 +751,7 @@ export default function Flotato() {
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>
             {touch ? 'tap to begin' : 'tap or press SPACE to begin'}
           </div>
-          {ios && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.5 }}>the ring/silent switch mutes the game</div>}
+          {silentHint && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.5 }}>the ring/silent switch mutes the game</div>}
           <div style={creditStyle}>
             inspired by Terry Cavanagh, creator of{' '}
             <a href="https://superhexagon.com" target="_blank" rel="noreferrer" style={linkStyle}>
