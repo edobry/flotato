@@ -19,7 +19,16 @@ const maskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 `;
 
 function render(svg, size, name) {
-  const png = execFileSync('rsvg-convert', ['-w', String(size), '-h', String(size)], { input: svg });
+  let png;
+  try {
+    png = execFileSync('rsvg-convert', ['-w', String(size), '-h', String(size)], { input: svg });
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      console.error('rsvg-convert not found: install librsvg (macOS: brew install librsvg; Debian: apt install librsvg2-bin)');
+      process.exit(1);
+    }
+    throw e;
+  }
   writeFileSync(out(name), png);
   console.log('public/icons/' + name, size + 'px', png.length + ' bytes');
 }

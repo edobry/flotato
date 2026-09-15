@@ -12,6 +12,7 @@ const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
 let phase: UpdatePhase = 'start';
 let apply: (() => void) | null = null;
+let watching = false;
 
 function applyIf(ok: boolean): void {
   if (!apply || !ok) return;
@@ -25,9 +26,10 @@ export function reportPhase(p: UpdatePhase): void {
   phase = p;
 }
 
-/** Registers the worker, once, from the main entry. */
+/** Registers the worker from the main entry; a second call is a no-op, so listeners never stack. */
 export function watchForUpdates(): void {
-  if (!('serviceWorker' in navigator)) return;
+  if (watching || !('serviceWorker' in navigator)) return;
+  watching = true;
   const update = registerSW({
     onNeedRefresh() {
       apply = () => update(true);
