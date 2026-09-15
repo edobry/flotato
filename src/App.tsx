@@ -145,6 +145,8 @@ export default function Flotato() {
     // What the music engine and the player observer see. One object, rewritten every frame.
     const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, lanes: [0, 0, 0, 0, 0, 0], rotDir: 0, camSpin: 0, playing: false };
     const laneMin = new Array<number>(SIDES);
+    // The Transport beat phase, read once per frame while playing; the observer and the visual pulse share it.
+    let beat = -1;
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
 
@@ -276,7 +278,10 @@ export default function Flotato() {
       }
       s.camA += s.camSpin * dt;
 
-      if (phaseRef.current !== 'playing' || s.dead) return;
+      if (phaseRef.current !== 'playing' || s.dead) {
+        beat = -1;
+        return;
+      }
 
       s.time += dt;
       if (s.time >= nextMilestone) {
@@ -343,7 +348,8 @@ export default function Flotato() {
       snap.camSpin = s.camSpin;
       snap.playing = true;
       music.setSnapshot(snap);
-      observer.frame(snap, music.beatPhase());
+      beat = music.beatPhase();
+      observer.frame(snap, beat);
 
       // collision
       for (let i = 0; i < s.walls.length; i++) {
@@ -380,8 +386,8 @@ export default function Flotato() {
       ctx.clearRect(0, 0, w, h);
 
       const hue = Math.floor(s.hue);
-      const beat = tuningRef.current.beatPulse ? music.beatPhase() : -1;
-      const pulse = beat >= 0 ? 1 + 0.03 * Math.pow(1 - beat, 3) : 1 + 0.022 * Math.sin(s.pulseT * 6.2);
+      const pulse =
+        tuningRef.current.beatPulse && beat >= 0 ? 1 + 0.03 * Math.pow(1 - beat, 3) : 1 + 0.022 * Math.sin(s.pulseT * 6.2);
 
       ctx.save();
       ctx.translate(w / 2, h / 2);
