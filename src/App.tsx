@@ -3,6 +3,7 @@ import { createMusicEngine, type MusicEngine, type Snapshot, type WallKind } fro
 import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from './music/tuning';
 import { createObserver, type Observer, type RunSummary } from './player/observer';
 import { createInput, type Side } from './input';
+import { clearBest, loadBest, saveBest } from './best';
 import { diffLabel } from './tuning/chips';
 import { appendRun, clearRuns, loadRuns, saveRuns, type RunRecord, type Slot } from './tuning/runlog';
 import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
@@ -141,7 +142,8 @@ export default function Flotato() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<Phase>('start');
   const [finalTime, setFinalTime] = useState(0);
-  const [bestTime, setBestTime] = useState(0);
+  // The device's best, kept across reloads; the ref is what the loop and the HUD read.
+  const [bestTime, setBestTime] = useState(loadBest);
   const [run, setRun] = useState<RunSummary | null>(null);
   const [retryReady, setRetryReady] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -166,13 +168,15 @@ export default function Flotato() {
   const [rank, setRank] = useState<Rank | null>(null);
 
   const phaseRef = useRef<Phase>('start');
-  const bestRef = useRef(0);
+  const bestRef = useRef(bestTime);
   const musicRef = useRef<MusicEngine | null>(null);
   const observerRef = useRef<Observer | null>(null);
   const tuningRef = useRef(tuning);
   const mutedRef = useRef(muted);
   const touchRef = useRef(touch);
   const tuneModeRef = useRef(tuneMode);
+  // The key handler lives in the once-created loop effect; it reads the guide's state through this.
+  const guideModeRef = useRef(guideMode);
   const slotRef = useRef<Slot>('');
   const runsRef = useRef(runs);
   const tagRef = useRef(tag);
@@ -190,6 +194,10 @@ export default function Flotato() {
     tagRef.current = tag;
     saveTag(tag);
   }, [tag]);
+
+  useEffect(() => {
+    guideModeRef.current = guideMode;
+  }, [guideMode]);
 
   useEffect(() => {
     tuningRef.current = tuning;
@@ -354,6 +362,7 @@ export default function Flotato() {
       s.flash = killed ? 0.3 : 0;
       if (killed && !ghost && s.time > bestRef.current) {
         bestRef.current = s.time;
+        saveBest(s.time);
         music.best();
       }
       music.die();
@@ -443,7 +452,8 @@ export default function Flotato() {
       } else if (c === 'KeyM') {
         setMuted((m) => !m);
       } else if (c === 'KeyT') {
-        setShowTuning((v) => !v);
+        // The guide owns the screen between runs; a panel opened mid-run would overlap it on death.
+        if (!guideModeRef.current) setShowTuning((v) => !v);
       } else if (c === 'Escape') {
         if (ghostOn()) stopRef.current?.();
       }
@@ -748,7 +758,7 @@ export default function Flotato() {
       if (ghostOn() && phaseRef.current === 'playing') tags.push('GHOST');
       if (slotRef.current && phaseRef.current === 'playing') tags.push(slotRef.current);
       if (mutedRef.current) tags.push(touchRef.current ? 'MUTED' : 'MUTED  M');
-      else if (!touchRef.current) tags.push('M mute  T tune');
+      else if (!touchRef.current) tags.push(guideModeRef.current ? 'M mute' : 'M mute  T tune');
       const hint = tags.join('   ');
       if (hint) {
         ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
@@ -823,6 +833,11 @@ export default function Flotato() {
   const resetAll = () => {
     resetTuning();
     applyTuning({ ...DEFAULT_TUNING });
+  };
+  const resetBest = () => {
+    clearBest();
+    bestRef.current = 0;
+    setBestTime(0);
   };
   /** Start from a button: the gesture unlocks audio, a slot's tuning is applied first, the lockout still holds. */
   /** Starts a run under `t`; false when a run is on or the death lockout has not passed. */
@@ -951,6 +966,7 @@ export default function Flotato() {
             hold the left / right side of the screen
           </div>
           {!touch && <div style={{ fontSize: 14, opacity: 0.85 }}>or use ← → / A D on a keyboard</div>}
+          {bestTime > 0 && <div style={{ marginTop: 14, fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>}
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>
             {touch ? 'tap to begin' : 'tap or press SPACE to begin'}
           </div>
@@ -1026,7 +1042,8 @@ export default function Flotato() {
           )}
         </div>
       )}
-      {showTuning && !err && <TuningOverlay tuning={tuning} onChange={applyTuning} onReset={resetAll} />}
+      {/* The panel yields to the guide and comes back when the guide is left. */}
+      {showTuning && !guideMode && !err && <TuningOverlay tuning={tuning} onChange={applyTuning} onReset={resetAll} />}
       {tuneMode && touch && phase === 'playing' && tuning.ghost && !err && (
         <GhostStrip tuning={tuning} onChange={applyTuning} onStop={() => stopRef.current?.()} />
       )}
@@ -1053,6 +1070,8 @@ export default function Flotato() {
           tuning={tuning}
           onChange={applyTuning}
           onReset={resetAll}
+          best={bestTime}
+          onResetBest={resetBest}
           slots={slots}
           onSetSlot={setSlotFromCurrent}
           runs={runs}
