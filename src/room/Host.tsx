@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createMusicEngine, type MusicEngine, type Snapshot } from '../music/engine';
 import { loadTuning } from '../music/tuning';
 import { createObserver, type Observer, type RunSummary } from '../player/observer';
-import { buildId, postRun, telemetryAllowed } from '../telemetry';
+import { buildId, postRun, telemetryAllowed, type Rank } from '../telemetry';
 import { GLYPH_SIZE, glyph, glyphColor, glyphSvg } from '../glyph';
 import { PLAY_URL } from '../config';
 import {
@@ -29,7 +29,9 @@ import {
 } from '../game/walls';
 import { connectRoom, roomCodeFromLocation, type HostOut, type Phase, type Player, type SocketStatus, type ToHost } from './protocol';
 
-const COUNTDOWN_S = 3;
+const COUNT_IN_BARS = 2; // the round starts on a bar line: two bars of the beat before the first wall
+const BEATS_PER_BAR = 4;
+const COUNT_IN_GRACE_S = 1; // seconds to wait for the Transport before counting on the game clock
 const OVER_S = 7;
 const ROUND_CAP_S = 120;
 const STATE_HZ = 4;
@@ -55,6 +57,7 @@ interface Participant {
   snap: Snapshot;
   dangerPeakT: number;
   summary: RunSummary | null;
+  rank: Rank | null;
 }
 
 interface RoundView {
@@ -62,7 +65,7 @@ interface RoundView {
   round: number;
   countdown: number;
   elapsed: number;
-  players: { id: string; name: string; color: string; alive: boolean; time: number; place: number }[];
+  players: { id: string; name: string; color: string; alive: boolean; time: number; place: number; rank: Rank | null }[];
 }
 
 /** The glyph as a tiny canvas, drawn once per name and blitted every frame. */
@@ -102,6 +105,7 @@ export default function Host() {
   const [view, setView] = useState<RoundView>({ phase: 'lobby', round: 0, countdown: 0, elapsed: 0, players: [] });
   const [err, setErr] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
+  const [allReady, setAllReady] = useState(false);
   const startRef = useRef<() => void>(() => {});
   const musicRef = useRef<MusicEngine | null>(null);
 
@@ -153,9 +157,15 @@ export default function Host() {
     let phase: Phase = 'lobby';
     let round = 0;
     let countdown = 0;
+    // Count-in in beats, measured as beat phase travelled once the Transport runs; on the game clock after the grace.
+    let countInLeft = 0;
+    let countInWaited = 0;
+    let countInOnClock = false;
+    let lastBeat = -1;
     let elapsed = 0;
     let overLeft = 0;
     let allReadyFor = 0;
+    let allReadyShown = false;
     let stateTimer = 0;
     let rosterTimer = 0;
     const parts: Participant[] = [];
@@ -193,7 +203,7 @@ export default function Host() {
         round,
         countdown,
         elapsed,
-        players: parts.map((p) => ({ id: p.id, name: p.name, color: p.color, alive: p.alive, time: p.time, place: p.place })),
+        players: parts.map((p) => ({ id: p.id, name: p.name, color: p.color, alive: p.alive, time: p.time, place: p.place, rank: p.rank })),
       });
     };
 
@@ -222,11 +232,16 @@ export default function Host() {
           snap: { t: 0, danger: 0, pressure: 0, sector: 0, lanes, rotDir: 0, camSpin: 0, playing: true },
           dangerPeakT: -1,
           summary: null,
+          rank: null,
         });
       });
       walls = [];
       elapsed = 0;
-      countdown = COUNTDOWN_S;
+      countInLeft = COUNT_IN_BARS * BEATS_PER_BAR;
+      countInWaited = 0;
+      countInOnClock = false;
+      lastBeat = -1;
+      countdown = (countInLeft * 60) / tuning.bpmFloor;
       nextMilestone = MILESTONE_S;
       phase = 'countdown';
       music.start();
@@ -249,7 +264,10 @@ export default function Host() {
       p.summary = p.observer.die();
       flash = 0.25;
       if (tuning.telemetry && telemetryAllowed()) {
-        postRun({ device: p.id, tag: p.tag, variant: 'room', slot: '', build: buildId(), run: p.summary, tuning });
+        const roundOf = round;
+        postRun({ device: p.id, tag: p.tag, variant: 'room', slot: '', build: buildId(), run: p.summary, tuning }).then((r) => {
+          if (r && round === roundOf) p.rank = r;
+        });
       }
     };
 
@@ -313,19 +331,35 @@ export default function Host() {
         const connected = [...players.values()].filter((p) => p.connected);
         const ready = connected.filter((p) => p.ready);
         // Everyone here is ready: give stragglers a moment, then go without a keypress.
-        if (gestured && connected.length >= 2 && ready.length === connected.length) {
+        const everyone = gestured && connected.length >= 2 && ready.length === connected.length;
+        if (everyone) {
           allReadyFor += dt;
           if (allReadyFor >= ALL_READY_HOLD_S) beginCountdown();
         } else {
           allReadyFor = 0;
         }
+        if (everyone !== allReadyShown) {
+          allReadyShown = everyone;
+          setAllReady(everyone);
+        }
         return;
       }
 
       if (phase === 'countdown') {
-        countdown -= dt;
+        const b = beatPhase();
+        if (!countInOnClock && b >= 0) {
+          if (lastBeat >= 0) countInLeft -= (((b - lastBeat) % 1) + 1) % 1;
+          lastBeat = b;
+        } else {
+          countInWaited += dt;
+          if (countInOnClock || countInWaited >= COUNT_IN_GRACE_S) {
+            countInOnClock = true;
+            countInLeft -= (dt * tuning.bpmFloor) / 60;
+          }
+        }
+        countdown = Math.max(0, (countInLeft * 60) / tuning.bpmFloor);
         for (const p of parts) p.angle += p.dir * PLAYER_SPEED * dt;
-        if (countdown <= 0) {
+        if (countInLeft <= 0) {
           countdown = 0;
           beginPlay();
         }
@@ -576,7 +610,7 @@ export default function Host() {
                 ))}
               </div>
               <div style={{ marginTop: 26, fontSize: 15, fontWeight: 700 }}>
-                {unlocked ? (readyCount > 0 ? 'SPACE starts the round' : 'waiting for the room to ready up') : 'tap or press SPACE once to wake the sound'}
+                {!unlocked ? 'tap or press SPACE once to wake the sound' : allReady ? `everyone is ready · starting in ${ALL_READY_HOLD_S}s, or SPACE now` : readyCount > 0 ? 'SPACE starts the round' : 'waiting for the room to ready up'}
               </div>
               {view.round > 0 && <div style={{ marginTop: 6, fontSize: 13, opacity: 0.5 }}>round {view.round} done</div>}
             </div>
@@ -586,8 +620,8 @@ export default function Host() {
 
       {view.phase === 'countdown' && !err && (
         <div style={overlay}>
-          <div style={{ fontSize: '18vh', fontWeight: 800 }}>{Math.ceil(view.countdown)}</div>
-          <div style={{ fontSize: 18, opacity: 0.7 }}>{view.players.length} in</div>
+          <div style={{ fontSize: '18vh', fontWeight: 800 }}>{Math.max(1, Math.ceil(view.countdown))}</div>
+          <div style={{ fontSize: 18, opacity: 0.7 }}>{view.players.length} in · on the next bar</div>
         </div>
       )}
 
@@ -609,6 +643,7 @@ export default function Host() {
             {standings.slice(0, 8).map((p) => (
               <div key={p.id} style={{ color: p.color }}>
                 #{p.place || 1} {p.name} · {p.time.toFixed(2)}
+                {p.rank ? <span style={{ opacity: 0.55, fontSize: 15 }}>{`  · #${p.rank.rank} of ${p.rank.total} tonight`}</span> : null}
               </div>
             ))}
           </div>

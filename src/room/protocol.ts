@@ -2,7 +2,7 @@
 // itself connected. The room only relays; every message here is either a
 // pad's intent, the host's announcement, or the roster.
 
-import { BOARD_URL } from '../config';
+import { ROOM_URL } from '../config';
 
 export const DEFAULT_ROOM = 'fractal';
 export const PAD_ID_KEY = 'flotato.pad.id';
@@ -59,7 +59,7 @@ export type ToHost =
 export type SocketStatus = 'connecting' | 'open' | 'closed';
 
 export function roomSocketUrl(code: string, role: 'pad' | 'host'): string {
-  const base = BOARD_URL.replace(/^http/, 'ws');
+  const base = ROOM_URL.replace(/^http/, 'ws');
   return `${base}/room/${encodeURIComponent(code)}/ws?role=${role}`;
 }
 

@@ -110,7 +110,10 @@ export class Room extends DurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    if (typeof raw !== 'string' || raw.length > MAX_FRAME) return;
+    if (typeof raw !== 'string' || raw.length > MAX_FRAME) {
+      this.send(ws, { t: 'error', error: 'frame refused: text under ' + MAX_FRAME + ' chars only' });
+      return;
+    }
     let msg: unknown;
     try {
       msg = JSON.parse(raw);
