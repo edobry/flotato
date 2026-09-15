@@ -16,6 +16,8 @@ interface Props {
   onUse: () => void;
   onRestart: () => void;
   onBack: () => void;
+  /** False during the short lockout after a death; the play buttons wait for it. */
+  ready: boolean;
 }
 
 function copy(text: string, done: (ok: boolean) => void) {
@@ -26,7 +28,7 @@ function copy(text: string, done: (ok: boolean) => void) {
   }
 }
 
-export default function GuideSheet({ state, step, heard, onPlay, onVerdict, onListen, onUse, onRestart, onBack }: Props) {
+export default function GuideSheet({ state, step, heard, onPlay, onVerdict, onListen, onUse, onRestart, onBack, ready }: Props) {
   const [copied, setCopied] = useState<'' | 'ok' | 'fail'>('');
   const [fallback, setFallback] = useState('');
   const k = state.trail.length + 1;
@@ -94,10 +96,10 @@ export default function GuideSheet({ state, step, heard, onPlay, onVerdict, onLi
       </div>
       <p style={{ fontSize: 16, lineHeight: 1.5, margin: '10px 0 14px' }}>{step.ask}</p>
       <div style={{ display: 'flex', gap: 10 }}>
-        <button type="button" className={'btn' + (heard.A ? '' : ' primary')} style={{ flex: 1, padding: '16px 0' }} onClick={() => onPlay('A')}>
+        <button type="button" className={'btn' + (heard.A ? '' : ' primary')} style={{ flex: 1, padding: '16px 0' }} disabled={!ready} onClick={() => onPlay('A')}>
           play A · {step.aLabel}
         </button>
-        <button type="button" className={'btn' + (heard.B || !heard.A ? '' : ' primary')} style={{ flex: 1, padding: '16px 0' }} onClick={() => onPlay('B')}>
+        <button type="button" className={'btn' + (heard.B || !heard.A ? '' : ' primary')} style={{ flex: 1, padding: '16px 0' }} disabled={!ready} onClick={() => onPlay('B')}>
           play B · {step.bLabel}
         </button>
       </div>

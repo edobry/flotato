@@ -824,12 +824,14 @@ export default function Flotato() {
     applyTuning({ ...DEFAULT_TUNING });
   };
   /** Start from a button: the gesture unlocks audio, a slot's tuning is applied first, the lockout still holds. */
-  const playWith = (t: Tuning | null, which: Slot) => {
-    if (phase === 'playing' || !retryReady) return;
+  /** Starts a run under `t`; false when a run is on or the death lockout has not passed. */
+  const playWith = (t: Tuning | null, which: Slot): boolean => {
+    if (phase === 'playing' || !retryReady) return false;
     if (t) applyTuning(t);
     setSheetOpen(false);
     musicRef.current?.unlock();
     startRef.current?.(which);
+    return true;
   };
   const playFrom = (which: Slot) => playWith(slotTuning(slots, which), which);
 
@@ -840,8 +842,9 @@ export default function Flotato() {
   };
   const playSide = (side: GuideSide) => {
     if (!guideStep) return;
+    // Only a run that actually started counts as heard.
+    if (!playWith({ ...sideTuning(guide, guideStep, side), ghost: guide.listen }, side)) return;
     setHeard((h) => (h.id === guideStep.id ? { ...h, [side]: true } : { id: guideStep.id, A: side === 'A', B: side === 'B' }));
-    playWith({ ...sideTuning(guide, guideStep, side), ghost: guide.listen }, side);
   };
   const giveVerdict = (verdict: Verdict) => {
     if (!guideStep) return;
@@ -1041,6 +1044,7 @@ export default function Flotato() {
             setGuideMode(false);
             setSheetOpen(true);
           }}
+          ready={retryReady}
         />
       )}
       {tuneMode && sheetOpen && phase !== 'playing' && !err && !guideMode && (
