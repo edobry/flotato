@@ -36,6 +36,19 @@ Patterns are written in a small Tidal-style mini-notation (`src/music/mini.ts`)
 over a pure pattern core (`src/music/pattern.ts`) whose query model matches
 Strudel's, so the sequencing can grow or be swapped later.
 
+## Run stats
+
+A player observer (`src/player/observer.ts`) rides the same per-frame
+snapshot the music reads and reduces each run to a few loop metrics, shown on
+the game-over screen: reaction latency from a wall entering your lane to your
+first input (median, p90), the share of inputs made before any wall was in
+range, how phase-locked your inputs are to the beat (R, 0 to 1, and the mean
+offset in beats), overshoots and reversals, and how you died (jitter,
+overshoot, wrong way, freeze, late). The block can be hidden with the
+`runStats` knob; `dangerOnset` sets where in the danger range a threat begins.
+Each run also logs one `[flotato] run` line to the console with the metrics
+and the tuning in force, for playtest notes. Nothing is persisted yet.
+
 ## Development
 
 ```sh
