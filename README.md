@@ -26,8 +26,9 @@ Super Hexagon's immediate start). You can take position during it. After a
 death, taps and keys are ignored for 0.7 s so a thumb still held does not
 restart the run before the time is read. Hiding the page (lock screen, a
 notification, another tab) pauses the run and the music together; coming back
-resumes through the same count-in. On phones the key hints are not shown, and
-on iOS the ring/silent switch mutes the game.
+resumes through the same count-in. On phones the key hints are not shown. On
+iOS 17 and later the game claims a playback audio session, so the ring/silent
+switch does not mute it; on older iOS it does, and the title screen says so.
 
 ## Music
 
