@@ -41,6 +41,8 @@ export interface Tuning {
   runStats: boolean;
   /** Lane danger crossing above this is a threat onset for the player observer. 0 is the edge of the danger range. */
   dangerOnset: number;
+  /** Walls pass through the player: every mapping keeps sounding, nothing kills. For tuning by ear. */
+  ghost: boolean;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -65,6 +67,7 @@ export const DEFAULT_TUNING: Tuning = {
   volume: -6,
   runStats: true,
   dangerOnset: 0,
+  ghost: false,
 };
 
 export const SCALE_NAMES: ScaleName[] = ['wholeTone', 'minorHexatonic', 'majorPentatonic'];
@@ -104,6 +107,16 @@ function merge(base: Tuning, raw: Record<string, unknown>): Tuning {
   return out;
 }
 
+/** Apply a `?tune=key=value,key=value` string over `base`; unknown keys and unfit values are ignored. */
+export function applyTuneParam(base: Tuning, param: string): Tuning {
+  const raw: Record<string, unknown> = {};
+  for (const kv of param.split(',')) {
+    const eq = kv.indexOf('=');
+    if (eq > 0) raw[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim();
+  }
+  return merge(base, raw);
+}
+
 export function loadTuning(): Tuning {
   let t: Tuning = { ...DEFAULT_TUNING };
   try {
@@ -117,14 +130,7 @@ export function loadTuning(): Tuning {
   }
   try {
     const tune = new URLSearchParams(location.search).get('tune');
-    if (tune) {
-      const raw: Record<string, unknown> = {};
-      for (const kv of tune.split(',')) {
-        const eq = kv.indexOf('=');
-        if (eq > 0) raw[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim();
-      }
-      t = merge(t, raw);
-    }
+    if (tune) t = applyTuneParam(t, tune);
   } catch {
     /* no location in this environment */
   }
