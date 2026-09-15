@@ -20,6 +20,8 @@ export interface Snapshot {
   pressure: number;
   /** The sector the player occupies, 0..5. */
   sector: number;
+  /** Lane danger per sector, 0..1 each, indexed like `sector`. */
+  lanes: number[];
   rotDir: -1 | 0 | 1;
   camSpin: number;
   playing: boolean;
@@ -66,7 +68,7 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
   let pendingStart = false;
   let tuning = initial;
   let muted = false;
-  const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
+  const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, lanes: [0, 0, 0, 0, 0, 0], rotDir: 0, camSpin: 0, playing: false };
 
   function unlock() {
     if (disposed) return;

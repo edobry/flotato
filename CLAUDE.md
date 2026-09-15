@@ -29,10 +29,18 @@ Read it before starting a new task.
 
 1. Scaffold + GitHub Pages deploy: done
 2. Rename pass: done
-3. Tone.js procedural music engine: next. Propose the architecture (pattern
-   scheduler, which game-state signals drive which musical parameters) and
-   discuss before writing code. Eugene wants creative involvement here.
-4. Mobile polish / PWA manifest / service worker
-5. localStorage best-time persistence
-6. Potato easter egg mode
-7. Backlog: rotation reversals, 60-second level structure, pattern authoring
+3. Tone.js procedural music engine: done (mt#5151). Design decisions and
+   the signal map are on that task's spec; every mapping is a knob in the
+   tuning overlay (T, or `?tune`).
+4. Player instrumentation, Phase 0 of the attunement vision: done
+   (mt#5167). An observer on the same snapshot the music reads computes
+   per-run loop metrics (reaction latency, anticipation ratio, beat
+   entrainment, overshoots and reversals, death class) for the game-over
+   screen. Phases 1 (persisted player model) and 2 (policy mapping the
+   model to the tuning knobs) come next; keep the wall ramp fixed so scores
+   stay comparable, adapt only the feedback layer.
+5. Mobile polish / PWA manifest / service worker
+6. localStorage best-time persistence
+7. Potato easter egg mode
+8. Backlog: rotation reversals, 60-second level structure, pattern authoring,
+   mt#5172 (engine: move bpm ramps off the tick grid)

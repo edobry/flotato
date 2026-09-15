@@ -53,7 +53,7 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
   // the one Tone made at import time.
   if (audio) Tone.setContext(audio, true);
   let tuning = initial;
-  const state: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, rotDir: 0, camSpin: 0, playing: false };
+  const state: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, lanes: [0, 0, 0, 0, 0, 0], rotDir: 0, camSpin: 0, playing: false };
   const ctx: Ctx = { s: state, tuning, variant: 0 };
 
   let voices: Voices | null = null;

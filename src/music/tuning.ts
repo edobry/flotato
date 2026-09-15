@@ -1,4 +1,4 @@
-// Every knob the game master can turn while playing. Persisted in
+// Every knob the game master can turn while playing, for the music and the player observer. Persisted in
 // localStorage; any key can be overridden from the URL as ?tune=key=value,key=value.
 
 import type { ScaleName } from './scale';
@@ -33,6 +33,10 @@ export interface Tuning {
   padAutopan: boolean;
   /** Master volume in dB. */
   volume: number;
+  /** Show the run's loop metrics on the game-over screen. */
+  runStats: boolean;
+  /** Lane danger crossing above this is a threat onset for the player observer. 0 is the edge of the danger range. */
+  dangerOnset: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -53,6 +57,8 @@ export const DEFAULT_TUNING: Tuning = {
   arpPan: false,
   padAutopan: false,
   volume: -6,
+  runStats: true,
+  dangerOnset: 0,
 };
 
 export const SCALE_NAMES: ScaleName[] = ['wholeTone', 'minorHexatonic', 'majorPentatonic'];
