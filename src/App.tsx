@@ -374,7 +374,7 @@ export default function Flotato() {
     canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
-    window.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('contextmenu', onContextMenu);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onHide);
     window.addEventListener('pageshow', onShow);
@@ -686,7 +686,7 @@ export default function Flotato() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
-      window.removeEventListener('contextmenu', onContextMenu);
+      canvas.removeEventListener('contextmenu', onContextMenu);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onHide);
       window.removeEventListener('pageshow', onShow);
