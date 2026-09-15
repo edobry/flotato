@@ -213,7 +213,8 @@ export class Room extends DurableObject {
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     await this.dropped(ws);
-    // The peer closed: finish the handshake on this side, or its socket sits in CLOSING and never reconnects.
+    // The peer closed: finish the handshake on this side, or its socket sits in CLOSING and never reconnects
+    // (the hibernation API's documented pattern: the handler calls ws.close() to complete the close).
     try {
       ws.close(code, reason);
     } catch {

@@ -186,7 +186,8 @@ export default function Pad() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [state, setState] = useState<RoomState | null>(null);
   const [mine, setMine] = useState<PlayerState | null>(null);
-  const [hostUp, setHostUp] = useState(true);
+  // Whether a projector is connected; null until the room has said (a Worker from before it said stays null).
+  const [hostUp, setHostUp] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sockRef = useRef<ReturnType<typeof connectRoom<ToPad, PadOut>> | null>(null);
   const joinedRef = useRef(false);
@@ -431,7 +432,7 @@ export default function Pad() {
         >
           {ready ? 'READY' : 'READY?'}
         </button>
-        <div style={dim}>{link ?? (hostUp ? 'watch the screen' : 'the screen is away · waiting for it')}</div>
+        <div style={dim}>{link ?? (hostUp === false ? 'the screen is away · waiting for it' : 'watch the screen')}</div>
         {error && <div style={{ ...dim, color: '#ff8a8a' }}>{error}</div>}
         {rotateHint}
       </div>

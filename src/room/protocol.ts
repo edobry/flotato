@@ -92,8 +92,11 @@ const DEAD_AFTER_MS = KEEPALIVE_MS * 2 + 5000;
 /**
  * A WebSocket to the room that reconnects with backoff and pings to stay
  * awake. A connection that has gone silent (a Wi-Fi drop the browser has not
- * noticed) is abandoned and replaced rather than waited on. `onOpen` runs on
- * every (re)connection so the caller can re-join.
+ * noticed) is abandoned and replaced rather than waited on, but only once the
+ * room has answered a ping on this socket: a Worker from before host pings
+ * were answered stays quiet to a host in the lobby, and silence there must
+ * not read as death. `onOpen` runs on every (re)connection so the caller can
+ * re-join.
  */
 export function connectRoom<In, Out>(
   code: string,
@@ -114,6 +117,7 @@ export function connectRoom<In, Out>(
     const socket = new WebSocket(roomSocketUrl(code, role));
     ws = socket;
     let lastHeard = Date.now();
+    let answersPings = false;
     // Runs once per socket: whichever of onclose or the watchdog comes first schedules the retry.
     const down = () => {
       if (ws !== socket) return;
@@ -132,7 +136,7 @@ export function connectRoom<In, Out>(
       handlers.onOpen?.();
       clearInterval(keepalive);
       keepalive = window.setInterval(() => {
-        if (Date.now() - lastHeard > DEAD_AFTER_MS) {
+        if (answersPings && Date.now() - lastHeard > DEAD_AFTER_MS) {
           try {
             socket.close();
           } catch {
@@ -148,7 +152,9 @@ export function connectRoom<In, Out>(
       if (ws !== socket || typeof e.data !== 'string') return;
       lastHeard = Date.now();
       try {
-        handlers.onMessage(JSON.parse(e.data) as In);
+        const msg = JSON.parse(e.data) as In;
+        if ((msg as { t?: string }).t === 'pong') answersPings = true;
+        handlers.onMessage(msg);
       } catch {
         /* not ours */
       }
