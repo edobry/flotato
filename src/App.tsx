@@ -145,8 +145,13 @@ export default function Flotato() {
     // What the music engine and the player observer see. One object, rewritten every frame.
     const snap: Snapshot = { t: 0, danger: 0, pressure: 0, sector: 0, lanes: [0, 0, 0, 0, 0, 0], rotDir: 0, camSpin: 0, playing: false };
     const laneMin = new Array<number>(SIDES);
-    // The Transport beat phase, read once per frame while playing; the observer and the visual pulse share it.
-    let beat = -1;
+    // The Transport beat phase, read at most once per frame and only when something needs it
+    // (the visual pulse, or the observer at an input onset); NaN means not read yet this frame.
+    let beat = NaN;
+    const beatPhase = () => {
+      if (Number.isNaN(beat)) beat = music.beatPhase();
+      return beat;
+    };
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
 
@@ -278,10 +283,7 @@ export default function Flotato() {
       }
       s.camA += s.camSpin * dt;
 
-      if (phaseRef.current !== 'playing' || s.dead) {
-        beat = -1;
-        return;
-      }
+      if (phaseRef.current !== 'playing' || s.dead) return;
 
       s.time += dt;
       if (s.time >= nextMilestone) {
@@ -348,8 +350,7 @@ export default function Flotato() {
       snap.camSpin = s.camSpin;
       snap.playing = true;
       music.setSnapshot(snap);
-      beat = music.beatPhase();
-      observer.frame(snap, beat);
+      observer.frame(snap, beatPhase);
 
       // collision
       for (let i = 0; i < s.walls.length; i++) {
@@ -386,8 +387,8 @@ export default function Flotato() {
       ctx.clearRect(0, 0, w, h);
 
       const hue = Math.floor(s.hue);
-      const pulse =
-        tuningRef.current.beatPulse && beat >= 0 ? 1 + 0.03 * Math.pow(1 - beat, 3) : 1 + 0.022 * Math.sin(s.pulseT * 6.2);
+      const b = tuningRef.current.beatPulse ? beatPhase() : -1;
+      const pulse = b >= 0 ? 1 + 0.03 * Math.pow(1 - b, 3) : 1 + 0.022 * Math.sin(s.pulseT * 6.2);
 
       ctx.save();
       ctx.translate(w / 2, h / 2);
@@ -488,6 +489,7 @@ export default function Flotato() {
         if (!last) last = now;
         const dt = Math.min(0.05, Math.max(0.0001, (now - last) / 1000));
         last = now;
+        beat = NaN;
         update(dt);
         draw();
       } catch (ex) {

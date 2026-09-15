@@ -19,7 +19,7 @@ function sim(config: Partial<ObserverConfig> = {}) {
         s.t += DT;
         each?.(i);
         s.danger = s.lanes[s.sector];
-        obs.frame(s, beat);
+        obs.frame(s, () => beat);
       }
       return api;
     },
@@ -315,8 +315,28 @@ describe('lifecycle', () => {
   it('frames before start are ignored', () => {
     const obs = createObserver();
     const s: Snapshot = { t: 1, danger: 1, pressure: 1, sector: 0, lanes: [1, 0, 0, 0, 0, 0], rotDir: 1, camSpin: 0, playing: true };
-    obs.frame(s, 0.5);
+    obs.frame(s, () => 0.5);
     obs.start();
     expect(obs.die().anticipation.n).toBe(0);
+  });
+
+  it('configure takes effect at the next start, not mid-run', () => {
+    const g = sim();
+    g.approach(0, 0.3); // lane danger reaches 1 over 0.3s
+    g.obs.configure({ dangerOnset: 0.9 });
+    g.run(1, () => {
+      g.s.rotDir = 1;
+    });
+    // Still the run's original threshold (0): the onset was at the first frame, so latency is ~0.3s.
+    expect(g.die().reaction.median).toBeCloseTo(0.3, 1);
+    g.obs.start();
+    g.s.t = 0;
+    g.s.rotDir = 0;
+    g.s.lanes = [0, 0, 0, 0, 0, 0];
+    g.approach(0, 0.3); // crosses 0.9 at 0.27s
+    g.run(1, () => {
+      g.s.rotDir = 1;
+    });
+    expect(g.die().reaction.median).toBeLessThan(0.06);
   });
 });

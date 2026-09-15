@@ -53,10 +53,14 @@ export interface RunSummary {
 
 export interface Observer {
   start(): void;
-  /** Once per frame, after the snapshot is written; beatPhase is 0..1 or -1 when the Transport is not running. */
-  frame(s: Snapshot, beatPhase: number): void;
+  /**
+   * Once per frame, after the snapshot is written. beatPhase is read only at an
+   * input onset; it returns 0..1 within the beat, or -1 when the Transport is not running.
+   */
+  frame(s: Snapshot, beatPhase: () => number): void;
   /** At the collision, after the death frame was passed to frame(). */
   die(): RunSummary;
+  /** Takes effect at the next start(), so one run's metrics use one configuration. */
   configure(c: Partial<ObserverConfig>): void;
 }
 
@@ -88,7 +92,8 @@ function rank(sorted: number[], p: number): number {
 }
 
 export function createObserver(initial: Partial<ObserverConfig> = {}): Observer {
-  const cfg: ObserverConfig = { ...DEFAULT_OBSERVER_CONFIG, ...initial };
+  const next: ObserverConfig = { ...DEFAULT_OBSERVER_CONFIG, ...initial };
+  const cfg: ObserverConfig = { ...next };
 
   let t = 0;
   let prevSector = 0;
@@ -161,7 +166,7 @@ export function createObserver(initial: Partial<ObserverConfig> = {}): Observer 
     episode.edges++;
   }
 
-  function frame(s: Snapshot, beatPhase: number) {
+  function frame(s: Snapshot, beatPhase: () => number) {
     if (!started) return;
     t = s.t;
     const above = s.danger > cfg.dangerOnset;
@@ -192,9 +197,10 @@ export function createObserver(initial: Partial<ObserverConfig> = {}): Observer 
         lastOnsetT = t;
         onsetsAll++;
         if (!above) onsetsClear++;
-        if (beatPhase >= 0) {
-          sumCos += Math.cos(beatPhase * TAU);
-          sumSin += Math.sin(beatPhase * TAU);
+        const phase = beatPhase();
+        if (phase >= 0) {
+          sumCos += Math.cos(phase * TAU);
+          sumSin += Math.sin(phase * TAU);
           nBeat++;
         }
         lastOnsetWrong =
@@ -239,13 +245,14 @@ export function createObserver(initial: Partial<ObserverConfig> = {}): Observer 
 
   return {
     start() {
+      Object.assign(cfg, next);
       reset();
       started = true;
     },
     frame,
     die,
     configure(c) {
-      Object.assign(cfg, c);
+      Object.assign(next, c);
     },
   };
 }
