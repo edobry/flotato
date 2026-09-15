@@ -3,10 +3,9 @@
 // Worker; no interaction needed.
 
 import { useEffect, useState, type CSSProperties } from 'react';
-import { BOARD_URL } from '../telemetry';
+import { BOARD_URL, PLAY_URL } from '../config';
 
 const POLL_MS = 3000;
-const PLAY_URL = 'https://edobry.github.io/flotato/';
 const QR_SRC = import.meta.env.BASE_URL + 'qr.svg';
 const DASH = '—';
 

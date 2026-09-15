@@ -3,10 +3,8 @@
 
 import type { RunSummary } from './player/observer';
 import type { Tuning } from './music/tuning';
+import { BOARD_URL, SITE_ORIGIN } from './config';
 
-export const BOARD_URL = 'https://flotato-board.edobry.workers.dev';
-/** Where the runs come from in production; posting elsewhere needs `?tune=telemetry=true`. */
-export const SITE_ORIGIN = 'https://edobry.github.io';
 export const TAG_LENGTH = 3;
 const DEVICE_KEY = 'flotato.device';
 const TAG_KEY = 'flotato.tag';
@@ -87,7 +85,7 @@ export function saveTag(tag: string): void {
   }
 }
 
-/** Posting is on for the deployed site; a dev server posts only when asked to. */
+/** Posting is on for the deployed site (SITE_ORIGIN); a dev server posts only with `?tune=telemetry=true`. */
 export function telemetryAllowed(): boolean {
   try {
     if (location.origin === SITE_ORIGIN) return true;

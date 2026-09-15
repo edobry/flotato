@@ -44,7 +44,10 @@ async function postRun(request: Request, env: Env, headers: Record<string, strin
   const declared = Number(request.headers.get('Content-Length') ?? 0);
   if (declared > MAX_BODY_BYTES) return json({ error: 'body too large' }, 413, headers);
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return json({ error: 'body too large' }, 413, headers);
+  // Bytes, not UTF-16 code units: a body of multi-byte characters must not slip under the limit.
+  if (text.length > MAX_BODY_BYTES || new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    return json({ error: 'body too large' }, 413, headers);
+  }
   let body: unknown;
   try {
     body = JSON.parse(text);
