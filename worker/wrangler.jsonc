@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "flotato-board",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "vars": { "SITE_ORIGIN": "https://edobry.github.io" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "flotato-board",
+      "database_id": "REPLACE_AFTER_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

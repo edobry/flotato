@@ -9,6 +9,6 @@ export default defineConfig({
   base: '/flotato/',
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'worker/**/*.test.ts'],
   },
 })
