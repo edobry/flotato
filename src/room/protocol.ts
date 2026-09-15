@@ -21,7 +21,7 @@ export type Phase = 'lobby' | 'countdown' | 'play' | 'over';
 export interface PlayerState {
   id: string;
   alive: boolean;
-  /** Survival seconds this round; frozen at death. */
+  /** Survival seconds this round: the round's elapsed time while alive, frozen at death. */
   time: number;
   /** Finishing place once dead (1 = last survivor); 0 while alive. */
   place: number;
@@ -36,6 +36,8 @@ export interface RoomState {
   countdown: number;
   /** Elapsed round seconds while playing. */
   elapsed: number;
+  /** Seconds left on the over screen before the lobby, when the round is over. */
+  overLeft?: number;
   players: PlayerState[];
 }
 
@@ -43,14 +45,17 @@ export type PadOut = { t: 'join'; name: string; id: string } | { t: 'ready'; rea
 export type HostOut = RoomState | { t: 'reset' };
 
 export type ToPad =
-  | { t: 'welcome'; you: Player; players: Player[]; state: RoomState | null }
+  | { t: 'welcome'; you: Player; players: Player[]; state: RoomState | null; host?: boolean }
   | { t: 'roster'; players: Player[] }
   | RoomState
+  /** A projector connected or went away; pads re-send their direction on `up`. */
+  | { t: 'host'; up: boolean }
   | { t: 'error'; error: string }
   | { t: 'pong' };
 
 export type ToHost =
-  | { t: 'roster'; players: Player[] }
+  /** On connect the room also says which round it has seen last, so a reloaded host keeps counting. */
+  | { t: 'roster'; players: Player[]; round?: number }
   | { t: 'joined' | 'rejoined'; player: Player }
   | { t: 'left'; id: string }
   | { t: 'ready'; id: string; ready: boolean }

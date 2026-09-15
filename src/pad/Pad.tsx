@@ -1,6 +1,7 @@
 // The phone in the room: type a name, get a face, ready up, then hold left
 // or right and look at the projector. The pad shows only what the projector
-// cannot: your own phase, and your time when you fall.
+// cannot: your own phase, your time when you fall, and, once you are out,
+// the standings you would otherwise have to read off the wall.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createInput } from '../input';
@@ -17,6 +18,7 @@ import {
   type SocketStatus,
   type ToPad,
 } from '../room/protocol';
+import { sortStandings } from '../room/standings';
 
 type Screen = 'enter' | 'lobby' | 'countdown' | 'play' | 'dead' | 'over';
 
@@ -118,6 +120,35 @@ const hintStyle: CSSProperties = {
   pointerEvents: 'none',
 };
 const dim: CSSProperties = { fontSize: 14, opacity: 0.6, lineHeight: 1.5 };
+const MAX_STANDINGS = 6;
+
+/** The round as the host tells it, named from the roster: survivors first, then the fallen by time. */
+function Standings({ state, players, me }: { state: RoomState; players: Player[]; me: string }) {
+  const names = new Map(players.map((p) => [p.id, p.name]));
+  const rows = sortStandings(state.players);
+  return (
+    <div style={{ ...dim, fontSize: 13, textAlign: 'left', minWidth: 150 }}>
+      {rows.slice(0, MAX_STANDINGS).map((p) => {
+        const name = names.get(p.id) ?? '?';
+        return (
+          <div key={p.id} style={{ color: p.alive ? glyphColor(name) : '#fff', fontWeight: p.id === me ? 700 : 400 }}>
+            {name} · {p.alive ? `${Math.floor(p.time)} s in` : p.time.toFixed(2) + (p.place ? ` · #${p.place}` : '')}
+          </div>
+        );
+      })}
+      {rows.length > MAX_STANDINGS && <div>+{rows.length - MAX_STANDINGS} more</div>}
+    </div>
+  );
+}
+
+/** What a pad in the lobby is told about a round it is not in. */
+function roundNote(state: RoomState | null): string {
+  if (!state) return '';
+  if (state.phase === 'play') return ` · a round is on, ${state.players.filter((p) => p.alive).length} still in, you're in the next`;
+  if (state.phase === 'countdown') return " · a round is starting, you're in the next";
+  if (state.phase === 'over') return ` · round ${state.round} just ended`;
+  return '';
+}
 const button: CSSProperties = {
   font: 'inherit',
   fontSize: 18,
@@ -155,6 +186,7 @@ export default function Pad() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [state, setState] = useState<RoomState | null>(null);
   const [mine, setMine] = useState<PlayerState | null>(null);
+  const [hostUp, setHostUp] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sockRef = useRef<ReturnType<typeof connectRoom<ToPad, PadOut>> | null>(null);
   const joinedRef = useRef(false);
@@ -243,17 +275,30 @@ export default function Pad() {
           setYou(msg.you);
           setPlayers(msg.players);
           if (msg.state) setState(msg.state);
+          if (typeof msg.host === 'boolean') setHostUp(msg.host);
+          resendDir();
         } else if (msg.t === 'roster') {
           setPlayers(msg.players);
           const me = msg.players.find((p) => p.id === id);
           if (me) setYou(me);
         } else if (msg.t === 'state') {
           setState(msg);
+        } else if (msg.t === 'host') {
+          setHostUp(msg.up);
+          if (msg.up) resendDir();
         } else if (msg.t === 'error') {
           setError(msg.error);
         }
       },
     });
+  };
+
+  // After an outage on either end, a hold or a release that happened meanwhile is lost: say where the thumb is now.
+  const resendDir = () => {
+    if (screenRef.current !== 'play') return;
+    const d = inputRef.current.direction();
+    lastDir.current = d;
+    sockRef.current?.send({ t: 'dir', d });
   };
 
   useEffect(() => () => sockRef.current?.close(), []);
@@ -377,7 +422,7 @@ export default function Pad() {
         <div style={{ ...big, color }}>{you?.name ?? trimmed}</div>
         <div style={dim}>
           {hereCount} here · {readyCount} ready
-          {state?.phase === 'play' ? ' · a round is on, you are in the next' : ''}
+          {roundNote(state)}
         </div>
         <button
           type="button"
@@ -386,7 +431,7 @@ export default function Pad() {
         >
           {ready ? 'READY' : 'READY?'}
         </button>
-        <div style={dim}>{link ?? 'watch the screen'}</div>
+        <div style={dim}>{link ?? (hostUp ? 'watch the screen' : 'the screen is away · waiting for it')}</div>
         {error && <div style={{ ...dim, color: '#ff8a8a' }}>{error}</div>}
         {rotateHint}
       </div>
@@ -427,31 +472,24 @@ export default function Pad() {
     );
   }
 
-  if (screen === 'dead') {
-    return (
-      <div style={page}>
-        {face}
-        <div style={big}>{mine ? mine.time.toFixed(2) : ''}</div>
-        <div style={dim}>
-          {mine?.place ? `#${mine.place} this round` : ''}
-          <br />
-          {state ? `${state.players.filter((p) => p.alive).length} still in` : ''}
-          <br />
-          you're in the next round
-        </div>
-      </div>
-    );
-  }
-
+  // Out, or the round is over: your time and place beside the standings, side by side for a phone held sideways.
+  const smallFace = <div style={{ height: 56 }} dangerouslySetInnerHTML={{ __html: trimmed ? glyphSvg(trimmed, 56, color) : '' }} />;
+  const stillIn = state ? state.players.filter((p) => p.alive).length : 0;
+  const note =
+    screen === 'dead'
+      ? `${stillIn} still in · you're in the next round`
+      : state?.overLeft
+        ? `next lobby in ${Math.max(1, Math.ceil(state.overLeft))} s`
+        : 'next round soon';
   return (
-    <div style={page}>
-      {face}
-      <div style={big}>{mine ? mine.time.toFixed(2) : ''}</div>
-      <div style={dim}>
-        {mine?.place ? `#${mine.place} of ${state?.players.length ?? 0}` : ''}
-        <br />
-        next round soon
+    <div style={{ ...page, flexDirection: 'row', gap: 32, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        {smallFace}
+        <div style={big}>{mine ? mine.time.toFixed(2) : ''}</div>
+        <div style={dim}>{mine?.place ? (screen === 'dead' ? `#${mine.place} this round` : `#${mine.place} of ${state?.players.length ?? 0}`) : ''}</div>
       </div>
+      {state && <Standings state={state} players={players} me={id} />}
+      <div style={{ ...hintStyle, opacity: 0.6 }}>{note}</div>
     </div>
   );
 }

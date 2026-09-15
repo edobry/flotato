@@ -28,13 +28,16 @@ import {
   type Wall,
 } from '../game/walls';
 import { connectRoom, roomCodeFromLocation, type HostOut, type Phase, type Player, type SocketStatus, type ToHost } from './protocol';
+import { sortStandings } from './standings';
 
 const COUNT_IN_BARS = 2; // the round starts on a bar line: two bars of the beat before the first wall
 const BEATS_PER_BAR = 4;
 const COUNT_IN_GRACE_S = 1; // seconds to wait for the Transport before counting on the game clock
 const OVER_S = 7;
+const LOBBY_RECAP_S = 25; // the last round's top three stay on the lobby this long
 const ROUND_CAP_S = 120;
 const STATE_HZ = 4;
+const LOBBY_HZ = 1; // pads in the lobby still hear the phase, so a late joiner's text stays live
 const ALL_READY_HOLD_S = 3;
 const MILESTONE_S = 10;
 const DEATH_FADE_S = 0.5;
@@ -60,13 +63,33 @@ interface Participant {
   rank: Rank | null;
 }
 
+interface ViewPlayer {
+  id: string;
+  name: string;
+  color: string;
+  alive: boolean;
+  time: number;
+  place: number;
+  rank: Rank | null;
+}
+
 interface RoundView {
   phase: Phase;
   round: number;
   countdown: number;
   elapsed: number;
-  players: { id: string; name: string; color: string; alive: boolean; time: number; place: number; rank: Rank | null }[];
+  overLeft: number;
+  players: ViewPlayer[];
+  /** The last round's top three, shown on the lobby for a moment. */
+  recap: { round: number; top: ViewPlayer[] } | null;
 }
+
+const KEYS: [string, string][] = [
+  ['SPACE', 'start'],
+  ['R', 'end the round'],
+  ['M', 'mute'],
+  ['ESC', 'hide this'],
+];
 
 /** The glyph as a tiny canvas, drawn once per name and blitted every frame. */
 function faceCanvas(name: string, color: string): HTMLCanvasElement {
@@ -102,10 +125,12 @@ export default function Host() {
   const [status, setStatus] = useState<SocketStatus>('closed');
   const statusRef = useRef<SocketStatus>('closed');
   const [roster, setRoster] = useState<Player[]>([]);
-  const [view, setView] = useState<RoundView>({ phase: 'lobby', round: 0, countdown: 0, elapsed: 0, players: [] });
+  const [view, setView] = useState<RoundView>({ phase: 'lobby', round: 0, countdown: 0, elapsed: 0, overLeft: 0, players: [], recap: null });
   const [err, setErr] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [allReady, setAllReady] = useState(false);
+  // Escape clears the projector down to the bare field; any phase change brings the overlays back.
+  const [hidden, setHidden] = useState(false);
   const startRef = useRef<() => void>(() => {});
   const musicRef = useRef<MusicEngine | null>(null);
 
@@ -132,10 +157,17 @@ export default function Host() {
         statusRef.current = s;
         setStatus(s);
       },
+      // Pads hear where the round stands the moment the projector is back.
+      onOpen: () => announce(),
       onMessage: (msg) => {
         if (msg.t === 'roster') {
           players.clear();
           for (const p of msg.players) players.set(p.id, p);
+          // The room remembers the count across a host reload; it only ever rises.
+          if (typeof msg.round === 'number' && msg.round > round) {
+            round = msg.round;
+            announce();
+          }
         } else if (msg.t === 'joined' || msg.t === 'rejoined') {
           players.set(msg.player.id, msg.player);
         } else if (msg.t === 'left') {
@@ -164,6 +196,8 @@ export default function Host() {
     let lastBeat = -1;
     let elapsed = 0;
     let overLeft = 0;
+    let recap: RoundView['recap'] = null;
+    let recapLeft = 0;
     let allReadyFor = 0;
     let allReadyShown = false;
     let stateTimer = 0;
@@ -189,6 +223,9 @@ export default function Host() {
 
     const readyPlayers = () => [...players.values()].filter((p) => p.connected && p.ready);
 
+    const viewPlayers = (): ViewPlayer[] =>
+      parts.map((p) => ({ id: p.id, name: p.name, color: p.color, alive: p.alive, time: p.alive ? elapsed : p.time, place: p.place, rank: p.rank }));
+
     const announce = () => {
       sock.send({
         t: 'state',
@@ -196,15 +233,15 @@ export default function Host() {
         round,
         countdown,
         elapsed,
-        players: parts.map((p) => ({ id: p.id, alive: p.alive, time: p.time, place: p.place })),
+        overLeft: phase === 'over' ? overLeft : 0,
+        players: parts.map((p) => ({ id: p.id, alive: p.alive, time: p.alive ? elapsed : p.time, place: p.place })),
       });
-      setView({
-        phase,
-        round,
-        countdown,
-        elapsed,
-        players: parts.map((p) => ({ id: p.id, name: p.name, color: p.color, alive: p.alive, time: p.time, place: p.place, rank: p.rank })),
-      });
+      setView({ phase, round, countdown, elapsed, overLeft: phase === 'over' ? overLeft : 0, players: viewPlayers(), recap });
+    };
+
+    const enterPhase = (next: Phase) => {
+      phase = next;
+      setHidden(false);
     };
 
     const beginCountdown = () => {
@@ -243,14 +280,15 @@ export default function Host() {
       lastBeat = -1;
       countdown = (countInLeft * 60) / tuning.bpmFloor;
       nextMilestone = MILESTONE_S;
-      phase = 'countdown';
+      recap = null;
+      enterPhase('countdown');
       music.start();
       announce();
     };
     startRef.current = beginCountdown;
 
     const beginPlay = () => {
-      phase = 'play';
+      enterPhase('play');
       for (const p of parts) p.observer.start();
       announce();
     };
@@ -281,19 +319,38 @@ export default function Host() {
         }
       }
       music.die();
-      phase = 'over';
+      enterPhase('over');
       overLeft = OVER_S;
       announce();
     };
 
     const backToLobby = () => {
-      phase = 'lobby';
+      if (parts.length > 0) {
+        recap = { round, top: sortStandings(viewPlayers()).slice(0, 3) };
+        recapLeft = LOBBY_RECAP_S;
+      }
+      enterPhase('lobby');
       parts.length = 0;
       walls = [];
       sock.send({ t: 'reset' });
       for (const [id, p] of players) players.set(id, { ...p, ready: false });
       rosterDirty = true;
       announce();
+    };
+
+    // R: the round is over now, whoever is still in; straight back to the lobby, nothing posted.
+    const abortRound = () => {
+      if (phase === 'lobby') return;
+      if (phase !== 'over') {
+        for (const p of parts) {
+          if (p.alive) {
+            p.time = elapsed;
+            p.place = 1;
+          }
+        }
+        music.die();
+      }
+      backToLobby();
     };
 
     // ---------- frame ----------
@@ -328,6 +385,10 @@ export default function Host() {
       }
 
       if (phase === 'lobby') {
+        if (recap) {
+          recapLeft -= dt;
+          if (recapLeft <= 0) recap = null;
+        }
         const connected = [...players.values()].filter((p) => p.connected);
         const ready = connected.filter((p) => p.ready);
         // Everyone here is ready: give stragglers a moment, then go without a keypress.
@@ -511,7 +572,7 @@ export default function Host() {
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       if (round > 0) ctx.fillText('ROUND ' + round, w - 20, 62);
       ctx.textAlign = 'left';
-      ctx.fillText(`room ${room} · ${statusRef.current === 'open' ? 'live' : statusRef.current}`, 20, 30);
+      ctx.fillText(`room ${room} · ${statusRef.current === 'open' ? 'live' : statusRef.current}${isMuted ? ' · muted' : ''}`, 20, 30);
     };
 
     let raf = 0;
@@ -528,7 +589,7 @@ export default function Host() {
         update(dt);
         draw();
         stateTimer += dt;
-        if (phase !== 'lobby' && stateTimer >= 1 / STATE_HZ) {
+        if (stateTimer >= 1 / (phase === 'lobby' ? LOBBY_HZ : STATE_HZ)) {
           stateTimer = 0;
           announce();
         }
@@ -547,6 +608,7 @@ export default function Host() {
     };
     raf = requestAnimationFrame(loop);
 
+    let isMuted = false;
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Enter') {
         music.unlock();
@@ -555,7 +617,12 @@ export default function Host() {
         beginCountdown();
         e.preventDefault();
       } else if (e.code === 'KeyM') {
-        music.setMuted(true);
+        isMuted = !isMuted;
+        music.setMuted(isMuted);
+      } else if (e.code === 'KeyR') {
+        abortRound();
+      } else if (e.code === 'Escape') {
+        setHidden((h) => !h);
       }
     };
     const onPointer = () => {
@@ -579,13 +646,14 @@ export default function Host() {
 
   const connected = roster.filter((p) => p.connected);
   const readyCount = connected.filter((p) => p.ready).length;
-  const standings = [...view.players].sort((a, b) => (a.alive === b.alive ? (a.alive ? 0 : b.time - a.time) : a.alive ? -1 : 1));
+  const standings = sortStandings(view.players);
+  const show = !err && !hidden;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100dvh', background: '#000', overflow: 'hidden' }}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
 
-      {view.phase === 'lobby' && !err && (
+      {view.phase === 'lobby' && show && (
         <div style={overlay}>
           <div style={{ display: 'flex', gap: '5vw', alignItems: 'center' }}>
             <div>
@@ -612,20 +680,39 @@ export default function Host() {
               <div style={{ marginTop: 26, fontSize: 15, fontWeight: 700 }}>
                 {!unlocked ? 'tap or press SPACE once to wake the sound' : allReady ? `everyone is ready · starting in ${ALL_READY_HOLD_S}s, or SPACE now` : readyCount > 0 ? 'SPACE starts the round' : 'waiting for the room to ready up'}
               </div>
-              {view.round > 0 && <div style={{ marginTop: 6, fontSize: 13, opacity: 0.5 }}>round {view.round} done</div>}
+              {view.recap ? (
+                <div style={{ marginTop: 14, fontSize: 14, lineHeight: 1.6 }}>
+                  <div style={{ opacity: 0.5 }}>round {view.recap.round}</div>
+                  {view.recap.top.map((p, i) => (
+                    <div key={p.id} style={{ color: p.color }}>
+                      #{i + 1} {p.name} · {p.time.toFixed(2)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                view.round > 0 && <div style={{ marginTop: 6, fontSize: 13, opacity: 0.5 }}>round {view.round} done</div>
+              )}
             </div>
+          </div>
+          <div style={{ position: 'absolute', left: 20, bottom: 16, fontSize: 12, opacity: 0.4, textAlign: 'left', lineHeight: 1.7 }}>
+            {KEYS.map(([key, what]) => (
+              <div key={key}>
+                <span style={{ display: 'inline-block', minWidth: 52, fontWeight: 700 }}>{key}</span>
+                {what}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {view.phase === 'countdown' && !err && (
+      {view.phase === 'countdown' && show && (
         <div style={overlay}>
           <div style={{ fontSize: '18vh', fontWeight: 800 }}>{Math.max(1, Math.ceil(view.countdown))}</div>
           <div style={{ fontSize: 18, opacity: 0.7 }}>{view.players.length} in · on the next bar</div>
         </div>
       )}
 
-      {(view.phase === 'play' || view.phase === 'over') && !err && (
+      {(view.phase === 'play' || view.phase === 'over') && show && (
         <div style={{ position: 'absolute', top: 80, right: 20, textAlign: 'right', fontFamily: 'ui-monospace, Menlo, Consolas, monospace', pointerEvents: 'none' }}>
           {standings.map((p) => (
             <div key={p.id} style={{ fontSize: 15, lineHeight: 1.6, opacity: p.alive ? 1 : 0.5, color: p.alive ? p.color : '#fff' }}>
@@ -636,7 +723,7 @@ export default function Host() {
         </div>
       )}
 
-      {view.phase === 'over' && !err && (
+      {view.phase === 'over' && show && (
         <div style={overlay}>
           <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: 6 }}>ROUND {view.round}</div>
           <div style={{ marginTop: 18, fontSize: 20, lineHeight: 1.7 }}>
@@ -647,7 +734,7 @@ export default function Host() {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 20, fontSize: 14, opacity: 0.6 }}>next lobby in a moment</div>
+          <div style={{ marginTop: 20, fontSize: 14, opacity: 0.6 }}>next lobby in {Math.max(1, Math.ceil(view.overLeft))} s</div>
         </div>
       )}
 
