@@ -3,7 +3,12 @@ import { createMusicEngine, type MusicEngine, type Snapshot, type WallKind } fro
 import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from './music/tuning';
 import { createObserver, type Observer, type RunSummary } from './player/observer';
 import { createInput, type Side } from './input';
+import { diffLabel } from './tuning/chips';
+import { appendRun, clearRuns, loadRuns, saveRuns, type RunRecord, type Slot } from './tuning/runlog';
+import { loadSlots, saveSlots, slotTuning, type Slots } from './tuning/slots';
 import TuningOverlay from './TuningOverlay';
+import TuneSheet from './TuneSheet';
+import GhostStrip from './GhostStrip';
 import RunStats from './RunStats';
 
 const TAU = Math.PI * 2;
@@ -130,8 +135,14 @@ export default function Flotato() {
   const [err, setErr] = useState<string | null>(null);
   const [muted, setMuted] = useState(loadMuted);
   const [tuning, setTuning] = useState<Tuning>(loadTuning);
-  const [showTuning, setShowTuning] = useState(tuningRequested);
   const [touch] = useState(coarsePointer);
+  // `?tune` is the game master's door: on a fine pointer it opens the side panel, on a phone the sheet.
+  const [tuneMode] = useState(tuningRequested);
+  const [showTuning, setShowTuning] = useState(() => tuningRequested() && !coarsePointer());
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [slots, setSlots] = useState<Slots>(loadSlots);
+  const [runs, setRuns] = useState<RunRecord[]>(loadRuns);
+  const [slot, setSlot] = useState<Slot>('');
   const [silentHint] = useState(silentSwitchMutes);
 
   const phaseRef = useRef<Phase>('start');
@@ -141,6 +152,12 @@ export default function Flotato() {
   const tuningRef = useRef(tuning);
   const mutedRef = useRef(muted);
   const touchRef = useRef(touch);
+  const tuneModeRef = useRef(tuneMode);
+  const slotRef = useRef<Slot>('');
+  const runsRef = useRef(runs);
+  // The loop's start and stop, for the sheet's play button and the strip's stop button.
+  const startRef = useRef<((which: Slot) => void) | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -213,6 +230,12 @@ export default function Flotato() {
     };
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
+    let dangerPeakSec = -1;
+    // Ghost mode is a tune-mode affordance only: the knob persists, but a plain URL never honours it.
+    const ghostOn = () => tuneModeRef.current && tuningRef.current.ghost;
+    // A run that started in ghost mode never sets a best or logs. Turning ghost off mid-run ends the run.
+    let runGhost = false;
+    let ghostWas = false;
 
     // Count-in: beats of audible Transport before the first wall. Measured as
     // beat phase travelled once the Transport starts (absorbing the engine load
@@ -265,10 +288,16 @@ export default function Flotato() {
 
     const canStart = () => phaseRef.current !== 'playing' && performance.now() - deadAt >= RETRY_LOCKOUT_MS;
 
-    const start = () => {
+    /** `which` names the A/B slot the run plays under; a plain tap or key starts under none. */
+    const start = (which: Slot = '') => {
       s = freshState();
       nextMilestone = MILESTONE_S;
       dangerPeakT = -1;
+      dangerPeakSec = -1;
+      runGhost = ghostOn();
+      ghostWas = runGhost;
+      slotRef.current = which;
+      setSlot(which);
       setFinalTime(0);
       setRun(null);
       setPhase('playing');
@@ -285,6 +314,52 @@ export default function Flotato() {
       music.start();
       observerPending = true;
       beginCountIn();
+    };
+    startRef.current = start;
+
+    /** The death transition. `killed` is false for a ghost run stopped on purpose. */
+    const endRun = (killed: boolean) => {
+      const ghost = runGhost || ghostOn();
+      s.dead = true;
+      s.flash = killed ? 0.3 : 0;
+      if (killed && !ghost && s.time > bestRef.current) {
+        bestRef.current = s.time;
+        music.best();
+      }
+      music.die();
+      snap.playing = false;
+      music.setSnapshot(snap);
+      const summary = observer.die();
+      if (killed && !ghost) {
+        // One line per run so playtest notes can be tied to the tuning that produced them.
+        console.info('[flotato] run', JSON.stringify({ ...summary, tuning: tuningRef.current }));
+        setRun(summary);
+        if (tuneModeRef.current) {
+          const rec: RunRecord = {
+            at: Date.now(),
+            time: s.time,
+            diff: diffLabel(tuningRef.current),
+            slot: slotRef.current,
+            tuning: tuningRef.current,
+            summary,
+          };
+          runsRef.current = appendRun(runsRef.current, rec);
+          saveRuns(runsRef.current);
+          setRuns(runsRef.current);
+        }
+      } else {
+        setRun(null);
+      }
+      setBestTime(bestRef.current);
+      setFinalTime(s.time);
+      setPhase('over');
+      deadAt = performance.now();
+      setRetryReady(false);
+      clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(() => setRetryReady(true), RETRY_LOCKOUT_MS);
+    };
+    stopRef.current = () => {
+      if (phaseRef.current === 'playing' && !s.dead) endRun(false);
     };
 
     const syncSize = () => {
@@ -325,6 +400,8 @@ export default function Flotato() {
         setMuted((m) => !m);
       } else if (c === 'KeyT') {
         setShowTuning((v) => !v);
+      } else if (c === 'Escape') {
+        if (ghostOn()) stopRef.current?.();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -435,6 +512,13 @@ export default function Flotato() {
 
       if (phaseRef.current !== 'playing' || s.dead) return;
 
+      const ghost = ghostOn();
+      if (ghostWas && !ghost) {
+        endRun(false);
+        return;
+      }
+      ghostWas = ghost;
+
       const dir = input.direction();
       s.playerA += dir * PLAYER_SPEED * dt;
 
@@ -497,8 +581,10 @@ export default function Flotato() {
       const pressure = anyD === Infinity ? 0 : clamp01(1 - anyD / DANGER_RANGE);
       if (danger > 0.6) {
         dangerPeakT = s.time;
+        dangerPeakSec = sec;
       } else if (danger < 0.15 && dangerPeakT >= 0) {
-        if (s.time - dangerPeakT < 0.35) music.thread();
+        // In ghost mode a wall also clears by passing through, which is not a threaded gap.
+        if (s.time - dangerPeakT < 0.35 && (!ghost || sec !== dangerPeakSec)) music.thread();
         dangerPeakT = -1;
       }
       snap.t = s.time;
@@ -511,7 +597,8 @@ export default function Flotato() {
       music.setSnapshot(snap);
       observer.frame(snap, beatPhase);
 
-      // collision
+      // collision; in ghost mode walls pass through and keep sounding
+      if (ghost) return;
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         if (
@@ -519,26 +606,7 @@ export default function Flotato() {
           wl.dist < PLAYER_R + HALF_W &&
           wl.dist + wl.thick > PLAYER_R - HALF_W
         ) {
-          s.dead = true;
-          s.flash = 0.3;
-          if (s.time > bestRef.current) {
-            bestRef.current = s.time;
-            music.best();
-          }
-          music.die();
-          snap.playing = false;
-          music.setSnapshot(snap);
-          const summary = observer.die();
-          // One line per run so playtest notes can be tied to the tuning that produced them.
-          console.info('[flotato] run', JSON.stringify({ ...summary, tuning: tuningRef.current }));
-          setRun(summary);
-          setBestTime(bestRef.current);
-          setFinalTime(s.time);
-          setPhase('over');
-          deadAt = performance.now();
-          setRetryReady(false);
-          clearTimeout(retryTimer);
-          retryTimer = window.setTimeout(() => setRetryReady(true), RETRY_LOCKOUT_MS);
+          endRun(true);
           break;
         }
       }
@@ -617,7 +685,7 @@ export default function Flotato() {
       ctx.lineTo(Math.cos(pa - spread) * baseR, Math.sin(pa - spread) * baseR);
       ctx.lineTo(Math.cos(pa + spread) * baseR, Math.sin(pa + spread) * baseR);
       ctx.closePath();
-      ctx.fillStyle = 'hsl(' + hue + ', 90%, 82%)';
+      ctx.fillStyle = ghostOn() ? 'hsla(' + hue + ', 90%, 82%, 0.45)' : 'hsl(' + hue + ', 90%, 82%)';
       ctx.fill();
 
       ctx.restore();
@@ -632,7 +700,12 @@ export default function Flotato() {
       const left = HUD_MARGIN + inset.left;
       const right = w - HUD_MARGIN - inset.right;
       const top = 30 + inset.top;
-      const hint = mutedRef.current ? (touchRef.current ? 'MUTED' : 'MUTED  M') : touchRef.current ? '' : 'M mute  T tune';
+      const tags: string[] = [];
+      if (ghostOn() && phaseRef.current === 'playing') tags.push('GHOST');
+      if (slotRef.current && phaseRef.current === 'playing') tags.push(slotRef.current);
+      if (mutedRef.current) tags.push(touchRef.current ? 'MUTED' : 'MUTED  M');
+      else if (!touchRef.current) tags.push('M mute  T tune');
+      const hint = tags.join('   ');
       if (hint) {
         ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
         ctx.textAlign = 'left';
@@ -691,10 +764,42 @@ export default function Flotato() {
       window.removeEventListener('pagehide', onHide);
       window.removeEventListener('pageshow', onShow);
       music.dispose();
+      startRef.current = null;
+      stopRef.current = null;
       if (musicRef.current === music) musicRef.current = null;
       if (observerRef.current === observer) observerRef.current = null;
     };
   }, []);
+
+  const applyTuning = (t: Tuning) => {
+    tuningRef.current = t;
+    setTuning(t);
+    saveTuning(t);
+  };
+  const resetAll = () => {
+    resetTuning();
+    applyTuning({ ...DEFAULT_TUNING });
+  };
+  /** Start from a button: the gesture unlocks audio, a slot's tuning is applied first, the lockout still holds. */
+  const playFrom = (which: Slot) => {
+    if (phase === 'playing' || !retryReady) return;
+    const t = slotTuning(slots, which);
+    if (t) applyTuning(t);
+    setSheetOpen(false);
+    musicRef.current?.unlock();
+    startRef.current?.(which);
+  };
+  const setSlotFromCurrent = (which: 'A' | 'B') => {
+    const next = { ...slots, [which]: tuning };
+    setSlots(next);
+    saveSlots(next);
+  };
+  const buttonStyle: CSSProperties = { pointerEvents: 'auto', marginTop: 14 };
+  const tuneButton = tuneMode && (
+    <button type="button" className="btn" style={buttonStyle} onPointerDown={(e) => e.stopPropagation()} onClick={() => setSheetOpen(true)}>
+      tune
+    </button>
+  );
 
   const overlayStyle: CSSProperties = {
     position: 'absolute',
@@ -752,6 +857,7 @@ export default function Flotato() {
             {touch ? 'tap to begin' : 'tap or press SPACE to begin'}
           </div>
           {silentHint && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.5 }}>the ring/silent switch mutes the game</div>}
+          {tuneButton}
           <div style={creditStyle}>
             inspired by Terry Cavanagh, creator of{' '}
             <a href="https://superhexagon.com" target="_blank" rel="noreferrer" style={linkStyle}>
@@ -770,23 +876,52 @@ export default function Flotato() {
           <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: 5 }}>GAME OVER</div>
           <div style={{ marginTop: 12, fontSize: 18 }}>TIME {finalTime.toFixed(2)}</div>
           <div style={{ fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>
+          {tuneMode && (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.55, overflowWrap: 'anywhere' }}>
+              {slot ? slot + ' · ' : ''}
+              {diffLabel(tuning)}
+            </div>
+          )}
           {run && tuning.runStats && <RunStats run={run} />}
           <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700, opacity: retryReady ? 1 : 0, transition: 'opacity 120ms' }}>
             {touch ? 'tap to retry' : 'tap or press SPACE to retry'}
           </div>
+          {tuneMode && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', opacity: retryReady ? 1 : 0, transition: 'opacity 120ms' }}>
+              {slots.A && slots.B && (
+                <>
+                  <button type="button" className="btn" style={buttonStyle} onPointerDown={(e) => e.stopPropagation()} onClick={() => playFrom('A')}>
+                    again A
+                  </button>
+                  <button type="button" className="btn" style={buttonStyle} onPointerDown={(e) => e.stopPropagation()} onClick={() => playFrom('B')}>
+                    again B
+                  </button>
+                </>
+              )}
+              {tuneButton}
+            </div>
+          )}
         </div>
       )}
-      {showTuning && !err && (
-        <TuningOverlay
+      {showTuning && !err && <TuningOverlay tuning={tuning} onChange={applyTuning} onReset={resetAll} />}
+      {tuneMode && touch && phase === 'playing' && tuning.ghost && !err && (
+        <GhostStrip tuning={tuning} onChange={applyTuning} onStop={() => stopRef.current?.()} />
+      )}
+      {tuneMode && sheetOpen && phase !== 'playing' && !err && (
+        <TuneSheet
           tuning={tuning}
-          onChange={(t) => {
-            setTuning(t);
-            saveTuning(t);
+          onChange={applyTuning}
+          onReset={resetAll}
+          slots={slots}
+          onSetSlot={setSlotFromCurrent}
+          runs={runs}
+          onClearRuns={() => {
+            clearRuns();
+            runsRef.current = [];
+            setRuns([]);
           }}
-          onReset={() => {
-            resetTuning();
-            setTuning({ ...DEFAULT_TUNING });
-          }}
+          onPlay={playFrom}
+          onClose={() => setSheetOpen(false)}
         />
       )}
       {err && (

@@ -31,3 +31,225 @@ body,
   -webkit-touch-callout: none;
   touch-action: none;
 }
+
+/* Desktop side panel rows */
+.panel .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+.panel .row.divider {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  opacity: 0.6;
+}
+.panel .knob-name {
+  opacity: 0.85;
+}
+.panel .row-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.panel .row-value input[type='range'] {
+  width: 90px;
+}
+.panel .row-num {
+  width: 36px;
+  text-align: right;
+}
+
+/* Tune sheet and ghost strip: thumb-sized controls, 16px inputs so iOS does not zoom on focus. */
+.sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow-y: auto;
+  padding: calc(14px + var(--sat)) calc(16px + var(--sar)) calc(90px + var(--sab)) calc(16px + var(--sal));
+  background: #000;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  pointer-events: auto;
+  touch-action: pan-y;
+  accent-color: #fff;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+.sheet h2 {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  opacity: 0.6;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip,
+.btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+}
+.chip {
+  border-radius: 22px;
+}
+.chip.on,
+.btn.primary {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+  font-weight: 700;
+}
+.btn:disabled {
+  opacity: 0.35;
+}
+.diffline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  min-height: 44px;
+}
+.diffline code,
+.slot code {
+  overflow-wrap: anywhere;
+  opacity: 0.85;
+}
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 4px;
+}
+.slot code {
+  flex: 1;
+}
+.knob {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.knob-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+}
+.knob input[type='range'] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+}
+.knob input[type='checkbox'] {
+  width: 28px;
+  height: 28px;
+}
+.sheet select,
+.strip select {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+}
+.runs table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.runs th,
+.runs td {
+  padding: 6px 4px;
+  text-align: left;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.runs td.num,
+.runs th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.sheet .fallback {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+}
+.sheet-foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px calc(16px + var(--sar)) calc(12px + var(--sab)) calc(16px + var(--sal));
+  background: linear-gradient(transparent, #000 45%);
+}
+.sheet-foot .btn {
+  flex: 1;
+}
+.strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 8px calc(12px + var(--sar)) calc(8px + var(--sab)) calc(12px + var(--sal));
+  background: rgba(0, 0, 0, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 14px;
+  pointer-events: auto;
+  touch-action: pan-x;
+  accent-color: #fff;
+}
+.strip .knobs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.strip .knobs .chip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+}
+.strip .current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.strip .current .knob {
+  flex: 1;
+  border-top: none;
+  padding: 0;
+}
