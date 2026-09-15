@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, type CSSProperties } from 'react';
 import { createMusicEngine, type MusicEngine, type Snapshot, type WallKind } from './music/engine';
 import { DEFAULT_TUNING, loadTuning, resetTuning, saveTuning, type Tuning } from './music/tuning';
 import { createObserver, type Observer, type RunSummary } from './player/observer';
+import { createInput, type Side } from './input';
 import TuningOverlay from './TuningOverlay';
 import RunStats from './RunStats';
 
@@ -14,7 +15,22 @@ const PLAYER_SPEED = 6.8; // radians per second
 const HALF_W = 6;         // player collision half-thickness in px
 const MILESTONE_S = 10;   // seconds between musical milestones
 const DANGER_RANGE = 250; // px over which lane danger ramps from 0 to 1
+const BEATS_PER_BAR = 4;
+const COUNT_IN_GRACE_S = 1; // seconds to wait for the Transport before the count-in runs on the game clock
+const RETRY_LOCKOUT_MS = 700; // after death, before a tap or key can start the next run
+const HUD_MARGIN = 16;
 const MUTED_KEY = 'flotato.muted';
+
+const KEY_SIDES: Record<string, Side> = {
+  ArrowLeft: -1,
+  KeyA: -1,
+  a: -1,
+  A: -1,
+  ArrowRight: 1,
+  KeyD: 1,
+  d: 1,
+  D: 1,
+};
 
 type Phase = 'start' | 'playing' | 'over';
 
@@ -66,6 +82,37 @@ function tuningRequested(): boolean {
   }
 }
 
+function coarsePointer(): boolean {
+  try {
+    return matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/** iPadOS reports itself as a Mac; the touch-point count tells them apart. */
+function isIOS(): boolean {
+  try {
+    const n = navigator;
+    return /iP(hone|ad|od)/.test(n.userAgent) || (n.platform === 'MacIntel' && n.maxTouchPoints > 1);
+  } catch {
+    return false;
+  }
+}
+
+/** Safe-area insets in px, resolved from the CSS variables index.css sets from env(). */
+function readInsets(out: { top: number; right: number; bottom: number; left: number }) {
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    out.top = parseFloat(cs.getPropertyValue('--sat')) || 0;
+    out.right = parseFloat(cs.getPropertyValue('--sar')) || 0;
+    out.bottom = parseFloat(cs.getPropertyValue('--sab')) || 0;
+    out.left = parseFloat(cs.getPropertyValue('--sal')) || 0;
+  } catch {
+    out.top = out.right = out.bottom = out.left = 0;
+  }
+}
+
 export default function Flotato() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,10 +120,13 @@ export default function Flotato() {
   const [finalTime, setFinalTime] = useState(0);
   const [bestTime, setBestTime] = useState(0);
   const [run, setRun] = useState<RunSummary | null>(null);
+  const [retryReady, setRetryReady] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [muted, setMuted] = useState(loadMuted);
   const [tuning, setTuning] = useState<Tuning>(loadTuning);
   const [showTuning, setShowTuning] = useState(tuningRequested);
+  const [touch] = useState(coarsePointer);
+  const [ios] = useState(isIOS);
 
   const phaseRef = useRef<Phase>('start');
   const bestRef = useRef(0);
@@ -84,6 +134,7 @@ export default function Flotato() {
   const observerRef = useRef<Observer | null>(null);
   const tuningRef = useRef(tuning);
   const mutedRef = useRef(muted);
+  const touchRef = useRef(touch);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -122,10 +173,12 @@ export default function Flotato() {
 
     let raf = 0;
     let stopped = false;
+    let hidden = false;
     let w = 0, h = 0, dpr = 1;
     let last = 0;
+    const inset = { top: 0, right: 0, bottom: 0, left: 0 };
 
-    const input = { left: false, right: false };
+    const input = createInput();
 
     const freshState = (): GameState => ({
       time: 0,
@@ -155,6 +208,57 @@ export default function Flotato() {
     let nextMilestone = MILESTONE_S;
     let dangerPeakT = -1;
 
+    // Count-in: beats of audible Transport before the first wall. Counted from
+    // Transport beat wraps once it starts (absorbing the engine load on the
+    // first tap); if it has not started after the grace period, on the game
+    // clock instead, so a refused or absent audio context cannot hang the run.
+    let countInLeft = 0;
+    let countInWaited = 0;
+    let countInOnClock = false;
+    let lastBeatPhase = -1;
+    // The observer starts with the first wall, not the tap: positioning during the count-in is not a reaction.
+    let observerPending = false;
+    let deadAt = -Infinity;
+    let retryTimer = 0;
+
+    const startObserverIfPending = () => {
+      if (!observerPending) return;
+      observerPending = false;
+      observer.start();
+    };
+
+    const beginCountIn = () => {
+      countInLeft = Math.max(0, Math.round(tuningRef.current.countInBars)) * BEATS_PER_BAR;
+      countInWaited = 0;
+      countInOnClock = false;
+      lastBeatPhase = -1;
+      if (countInLeft === 0) startObserverIfPending();
+    };
+
+    /** Advances the count-in; true while walls must stay out. */
+    const countingIn = (dt: number): boolean => {
+      if (countInLeft <= 0) return false;
+      const b = beatPhase();
+      if (!countInOnClock && b >= 0) {
+        if (lastBeatPhase >= 0 && b < lastBeatPhase) countInLeft -= 1;
+        lastBeatPhase = b;
+      } else {
+        countInWaited += dt;
+        if (countInOnClock || countInWaited >= COUNT_IN_GRACE_S) {
+          countInOnClock = true;
+          countInLeft -= (dt * tuningRef.current.bpmFloor) / 60;
+        }
+      }
+      if (countInLeft > 0) return true;
+      countInLeft = 0;
+      startObserverIfPending();
+      return false;
+    };
+
+    const playerSector = () => Math.floor((((s.playerA % TAU) + TAU) % TAU) / SECTOR) % SIDES;
+
+    const canStart = () => phaseRef.current !== 'playing' && performance.now() - deadAt >= RETRY_LOCKOUT_MS;
+
     const start = () => {
       s = freshState();
       nextMilestone = MILESTONE_S;
@@ -162,8 +266,19 @@ export default function Flotato() {
       setFinalTime(0);
       setRun(null);
       setPhase('playing');
+      // A fresh snapshot before the first tick, or the engine would ramp the tempo from the last run's time.
+      snap.t = 0;
+      snap.danger = 0;
+      snap.pressure = 0;
+      snap.lanes.fill(0);
+      snap.sector = playerSector();
+      snap.rotDir = 0;
+      snap.camSpin = s.camSpin;
+      snap.playing = true;
+      music.setSnapshot(snap);
       music.start();
-      observer.start();
+      observerPending = true;
+      beginCountIn();
     };
 
     const syncSize = () => {
@@ -177,6 +292,7 @@ export default function Flotato() {
         dpr = ndpr;
         canvas.width = Math.max(1, Math.round(w * dpr));
         canvas.height = Math.max(1, Math.round(h * dpr));
+        readInsets(inset);
       }
     };
 
@@ -185,18 +301,19 @@ export default function Flotato() {
       const tag = (e.target as HTMLElement | null)?.tagName;
       return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON';
     };
+    const keySide = (e: KeyboardEvent) => KEY_SIDES[e.code] ?? KEY_SIDES[e.key];
+    const keyId = (e: KeyboardEvent) => 'k' + (e.code || e.key);
+    const pointerId = (e: PointerEvent) => 'p' + e.pointerId;
     const onKeyDown = (e: KeyboardEvent) => {
       if (isFormTarget(e)) return;
       const c = e.code || '';
-      if (c === 'ArrowLeft' || c === 'KeyA' || e.key === 'a' || e.key === 'A') {
-        input.left = true;
-        e.preventDefault();
-      } else if (c === 'ArrowRight' || c === 'KeyD' || e.key === 'd' || e.key === 'D') {
-        input.right = true;
+      const side = keySide(e);
+      if (side !== undefined) {
+        input.press(keyId(e), side);
         e.preventDefault();
       } else if (c === 'Space' || c === 'Enter' || e.key === ' ') {
         music.unlock();
-        if (phaseRef.current !== 'playing') start();
+        if (canStart()) start();
         e.preventDefault();
       } else if (c === 'KeyM') {
         setMuted((m) => !m);
@@ -205,29 +322,56 @@ export default function Flotato() {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      const c = e.code || '';
-      if (c === 'ArrowLeft' || c === 'KeyA' || e.key === 'a' || e.key === 'A') input.left = false;
-      if (c === 'ArrowRight' || c === 'KeyD' || e.key === 'd' || e.key === 'D') input.right = false;
+      if (keySide(e) !== undefined) input.release(keyId(e));
     };
     const onPointerDown = (e: PointerEvent) => {
       try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
       music.unlock();
-      if (phaseRef.current !== 'playing') start();
+      if (canStart()) start();
       const rect = canvas.getBoundingClientRect();
-      if (e.clientX - rect.left < rect.width / 2) input.left = true;
-      else input.right = true;
+      input.press(pointerId(e), e.clientX - rect.left < rect.width / 2 ? -1 : 1);
     };
-    const onPointerUp = () => {
-      input.left = false;
-      input.right = false;
+    const onPointerUp = (e: PointerEvent) => {
+      input.release(pointerId(e));
+    };
+    const onFocusLost = () => {
+      input.clear();
+    };
+    const onContextMenu = (e: Event) => {
+      e.preventDefault();
+    };
+    // A hidden page stops rAF but not the Transport; hold both, and come back
+    // through a count-in so the music is not ahead of frozen walls.
+    const onHide = () => {
+      if (hidden) return;
+      hidden = true;
+      input.clear();
+      if (phaseRef.current === 'playing' && !s.dead) music.pause();
+    };
+    const onShow = () => {
+      if (!hidden) return;
+      hidden = false;
+      last = 0;
+      if (phaseRef.current === 'playing' && !s.dead) {
+        music.resume();
+        beginCountIn();
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onHide();
+      else onShow();
     };
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onPointerUp);
+    window.addEventListener('blur', onFocusLost);
     canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('contextmenu', onContextMenu);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
 
     try { wrapRef.current?.focus(); } catch { /* focus can throw in sandboxed frames */ }
 
@@ -285,14 +429,24 @@ export default function Flotato() {
 
       if (phaseRef.current !== 'playing' || s.dead) return;
 
+      const dir = input.direction();
+      s.playerA += dir * PLAYER_SPEED * dt;
+
+      // Taking position during the count-in is allowed; nothing else moves,
+      // and the music still hears where the player is.
+      if (countingIn(dt)) {
+        snap.sector = playerSector();
+        snap.rotDir = dir;
+        snap.camSpin = s.camSpin;
+        music.setSnapshot(snap);
+        return;
+      }
+
       s.time += dt;
       if (s.time >= nextMilestone) {
         music.milestone(Math.round(nextMilestone / MILESTONE_S));
         nextMilestone += MILESTONE_S;
       }
-
-      if (input.left) s.playerA -= PLAYER_SPEED * dt;
-      if (input.right) s.playerA += PLAYER_SPEED * dt;
 
       // walls move inward
       const speed = 170 + Math.min(240, s.time * 7);
@@ -320,8 +474,7 @@ export default function Flotato() {
       }
 
       // where the player is, and how close the walls are (per lane, this lane, and overall)
-      const a = ((s.playerA % TAU) + TAU) % TAU;
-      const sec = Math.floor(a / SECTOR) % SIDES;
+      const sec = playerSector();
       laneMin.fill(Infinity);
       let anyD = Infinity;
       for (let i = 0; i < s.walls.length; i++) {
@@ -346,7 +499,7 @@ export default function Flotato() {
       snap.danger = danger;
       snap.pressure = pressure;
       snap.sector = sec;
-      snap.rotDir = input.left === input.right ? 0 : input.left ? -1 : 1;
+      snap.rotDir = dir;
       snap.camSpin = s.camSpin;
       snap.playing = true;
       music.setSnapshot(snap);
@@ -376,6 +529,10 @@ export default function Flotato() {
           setBestTime(bestRef.current);
           setFinalTime(s.time);
           setPhase('over');
+          deadAt = performance.now();
+          setRetryReady(false);
+          clearTimeout(retryTimer);
+          retryTimer = window.setTimeout(() => setRetryReady(true), RETRY_LOCKOUT_MS);
           break;
         }
       }
@@ -465,25 +622,36 @@ export default function Flotato() {
         ctx.fillRect(0, 0, w, h);
       }
 
-      // HUD
-      ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.fillText(mutedRef.current ? 'MUTED  M' : 'M mute  T tune', 16, 30);
+      // HUD, inside the safe area. Key hints only where there is a keyboard.
+      const left = HUD_MARGIN + inset.left;
+      const right = w - HUD_MARGIN - inset.right;
+      const top = 30 + inset.top;
+      const hint = mutedRef.current ? (touchRef.current ? 'MUTED' : 'MUTED  M') : touchRef.current ? '' : 'M mute  T tune';
+      if (hint) {
+        ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillText(hint, left, top);
+      }
       if (phaseRef.current !== 'start') {
         ctx.font = '700 18px ui-monospace, Menlo, Consolas, monospace';
         ctx.textAlign = 'right';
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fillText('TIME ' + s.time.toFixed(2), w - 16, 30);
+        ctx.fillText('TIME ' + s.time.toFixed(2), right, top);
         ctx.font = '600 13px ui-monospace, Menlo, Consolas, monospace';
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
-        ctx.fillText('BEST ' + bestRef.current.toFixed(2), w - 16, 50);
+        ctx.fillText('BEST ' + bestRef.current.toFixed(2), right, top + 20);
       }
     };
 
     // ---------- main loop with crash reporting ----------
     const loop = (now: number) => {
       if (stopped) return;
+      if (hidden) {
+        last = 0;
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       try {
         syncSize();
         if (!last) last = now;
@@ -505,12 +673,17 @@ export default function Flotato() {
     return () => {
       stopped = true;
       cancelAnimationFrame(raf);
+      clearTimeout(retryTimer);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onPointerUp);
+      window.removeEventListener('blur', onFocusLost);
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('contextmenu', onContextMenu);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
       music.dispose();
       if (musicRef.current === music) musicRef.current = null;
       if (observerRef.current === observer) observerRef.current = null;
@@ -532,14 +705,14 @@ export default function Flotato() {
     pointerEvents: 'none',
     fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
     textShadow: '0 2px 12px rgba(0,0,0,0.8)',
-    padding: 16,
+    padding: 'calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal))',
   };
 
   const creditStyle: CSSProperties = {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 18,
+    left: 'calc(16px + var(--sal))',
+    right: 'calc(16px + var(--sar))',
+    bottom: 'calc(18px + var(--sab))',
     fontSize: 12,
     lineHeight: 1.5,
     opacity: 0.6,
@@ -552,20 +725,7 @@ export default function Flotato() {
   };
 
   return (
-    <div
-      ref={wrapRef}
-      tabIndex={0}
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: '100vh',
-        background: '#000',
-        overflow: 'hidden',
-        outline: 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-      }}
-    >
+    <div ref={wrapRef} tabIndex={0} className="flotato">
       <canvas
         ref={canvasRef}
         style={{
@@ -581,8 +741,11 @@ export default function Flotato() {
           <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
             hold the left / right side of the screen
           </div>
-          <div style={{ fontSize: 14, opacity: 0.85 }}>or use ← → / A D on a keyboard</div>
-          <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>tap or press SPACE to begin</div>
+          {!touch && <div style={{ fontSize: 14, opacity: 0.85 }}>or use ← → / A D on a keyboard</div>}
+          <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>
+            {touch ? 'tap to begin' : 'tap or press SPACE to begin'}
+          </div>
+          {ios && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.5 }}>the ring/silent switch mutes the game</div>}
           <div style={creditStyle}>
             inspired by Terry Cavanagh, creator of{' '}
             <a href="https://superhexagon.com" target="_blank" rel="noreferrer" style={linkStyle}>
@@ -602,7 +765,9 @@ export default function Flotato() {
           <div style={{ marginTop: 12, fontSize: 18 }}>TIME {finalTime.toFixed(2)}</div>
           <div style={{ fontSize: 14, opacity: 0.7 }}>BEST {bestTime.toFixed(2)}</div>
           {run && tuning.runStats && <RunStats run={run} />}
-          <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700 }}>tap or press SPACE to retry</div>
+          <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700, opacity: retryReady ? 1 : 0, transition: 'opacity 120ms' }}>
+            {touch ? 'tap to retry' : 'tap or press SPACE to retry'}
+          </div>
         </div>
       )}
       {showTuning && !err && (

@@ -33,6 +33,9 @@ export interface MusicEngine {
   /** Call from inside a user gesture handler; loads the engine and resumes the AudioContext. */
   unlock(): void;
   start(): void;
+  /** Hold the Transport where it is (page hidden); resume() continues from the same position. */
+  pause(): void;
+  resume(): void;
   die(): void;
   best(): void;
   /** A gap was threaded or a wall dodged: the reward accent. */
@@ -114,6 +117,12 @@ export function createMusicEngine(initial: Tuning): MusicEngine {
     start() {
       if (impl) impl.start();
       else pendingStart = true;
+    },
+    pause() {
+      impl?.pause();
+    },
+    resume() {
+      impl?.resume();
     },
     die() {
       pendingStart = false;
