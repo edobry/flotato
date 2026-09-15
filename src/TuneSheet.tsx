@@ -10,6 +10,9 @@ interface Props {
   tuning: Tuning;
   onChange: (t: Tuning) => void;
   onReset: () => void;
+  /** The device's best time, which `onReset` leaves alone; `onResetBest` clears it. */
+  best: number;
+  onResetBest: () => void;
   slots: Slots;
   onSetSlot: (slot: 'A' | 'B') => void;
   runs: RunRecord[];
@@ -28,7 +31,7 @@ function copy(text: string, done: (ok: boolean) => void) {
 }
 
 /** Between runs: chips, the A/B pair, every knob at thumb size, and the run log. */
-export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot, runs, onClearRuns, onPlay, onClose, onGuide }: Props) {
+export default function TuneSheet({ tuning, onChange, onReset, best, onResetBest, slots, onSetSlot, runs, onClearRuns, onPlay, onClose, onGuide }: Props) {
   const [copied, setCopied] = useState<'' | 'link' | 'json' | 'fail'>('');
   // When the clipboard is unavailable (no secure context, permission denied), show the text to select by hand.
   const [fallback, setFallback] = useState('');
@@ -152,6 +155,9 @@ export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot,
           </button>
           <button type="button" className="btn" disabled={runs.length === 0} onClick={onClearRuns}>
             clear
+          </button>
+          <button type="button" className="btn" disabled={best === 0} onClick={onResetBest} style={{ marginLeft: 'auto' }}>
+            reset best{best > 0 ? ' ' + best.toFixed(2) : ''}
           </button>
         </div>
       </div>
