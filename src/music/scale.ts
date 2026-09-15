@@ -1,12 +1,14 @@
 // Six-note scales so the hexagon's six sectors map onto six degrees.
 
-export type ScaleName = 'wholeTone' | 'minorHexatonic' | 'majorPentatonic';
+export type ScaleName = 'wholeTone' | 'minorHexatonic' | 'dorianHexatonic' | 'majorPentatonic';
 
 export const SCALES: Record<ScaleName, readonly number[]> = {
   // No tonic pull: every sector is equally consonant. The default.
   wholeTone: [0, 2, 4, 6, 8, 10],
-  // Root and fifth pull; darker, more grounded.
+  // Root and fifth pull; darker, more grounded. The v2 default.
   minorHexatonic: [0, 2, 3, 5, 7, 10],
+  // Minor with a bright sixth: the same pull, less shadow.
+  dorianHexatonic: [0, 2, 3, 5, 7, 9],
   // Reserved for potato mode: five notes plus the octave to stay six wide.
   majorPentatonic: [0, 2, 4, 7, 9, 12],
 };

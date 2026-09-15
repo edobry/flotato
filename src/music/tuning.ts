@@ -2,10 +2,19 @@
 // localStorage; any key can be overridden from the URL as ?tune=key=value,key=value.
 
 import type { ScaleName } from './scale';
+import { ARP_CEILINGS, type ArpCeiling } from './evolution';
 
 export interface Tuning {
+  /** Which music: v2 is the hypnotic register (pulse, off-beat bass, plateaus); v1 the original engine. */
+  register: 'v1' | 'v2';
   /** Master scale on every state-to-music mapping. 0 is a metronome (Super Hexagon). */
   reactivity: number;
+  /** Depth of the kick-locked ducking on bass, pad and arp. 0 is flat. */
+  pump: number;
+  /** Where the arp's density stops: 8ths until 4 layers in then 16ths, 8ths only, or 16ths from its entry. */
+  arpCeiling: ArpCeiling;
+  /** Bars between layer arrivals in v2. */
+  layerBars: number;
   bpmFloor: number;
   bpmCeil: number;
   /** Seconds of survival over which BPM ramps from floor to ceiling. */
@@ -48,14 +57,18 @@ export interface Tuning {
 }
 
 export const DEFAULT_TUNING: Tuning = {
+  register: 'v2',
   reactivity: 1,
-  bpmFloor: 160,
-  bpmCeil: 172,
-  bpmRampSeconds: 40,
+  pump: 0.5,
+  arpCeiling: 'plateau16',
+  layerBars: 4,
+  bpmFloor: 128,
+  bpmCeil: 136,
+  bpmRampSeconds: 90,
   drums: true,
-  scale: 'wholeTone',
+  scale: 'minorHexatonic',
   sectorMapping: true,
-  tension: 0.5,
+  tension: 0.25,
   reward: 1,
   foreshadow: false,
   deathMode: 'stop',
@@ -73,7 +86,9 @@ export const DEFAULT_TUNING: Tuning = {
   telemetry: true,
 };
 
-export const SCALE_NAMES: ScaleName[] = ['wholeTone', 'minorHexatonic', 'majorPentatonic'];
+export const SCALE_NAMES: ScaleName[] = ['minorHexatonic', 'dorianHexatonic', 'wholeTone', 'majorPentatonic'];
+export const REGISTERS: Tuning['register'][] = ['v2', 'v1'];
+export { ARP_CEILINGS };
 export const DEATH_MODES: Tuning['deathMode'][] = ['stop', 'drone'];
 
 const STORAGE_KEY = 'flotato.tuning';
@@ -96,6 +111,12 @@ function coerce<K extends keyof Tuning>(key: K, raw: unknown): Tuning[K] | undef
   }
   if (key === 'deathMode') {
     return (DEATH_MODES as string[]).includes(String(raw)) ? (raw as Tuning[K]) : undefined;
+  }
+  if (key === 'register') {
+    return (REGISTERS as string[]).includes(String(raw)) ? (raw as Tuning[K]) : undefined;
+  }
+  if (key === 'arpCeiling') {
+    return (ARP_CEILINGS as string[]).includes(String(raw)) ? (raw as Tuning[K]) : undefined;
   }
   return undefined;
 }

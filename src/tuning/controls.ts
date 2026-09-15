@@ -1,11 +1,13 @@
 // Per-knob control metadata shared by the desktop panel, the tune sheet and the ghost strip.
 
-import { DEATH_MODES, SCALE_NAMES, type Tuning } from '../music/tuning';
+import { ARP_CEILINGS, DEATH_MODES, REGISTERS, SCALE_NAMES, type Tuning } from '../music/tuning';
 
 export type NumKey = { [K in keyof Tuning]: Tuning[K] extends number ? K : never }[keyof Tuning];
 
 export const RANGES: Record<NumKey, [min: number, max: number, step: number]> = {
   reactivity: [0, 1, 0.05],
+  pump: [0, 1, 0.05],
+  layerBars: [1, 16, 1],
   bpmFloor: [90, 220, 1],
   bpmCeil: [90, 240, 1],
   bpmRampSeconds: [5, 120, 1],
@@ -20,6 +22,8 @@ export const RANGES: Record<NumKey, [min: number, max: number, step: number]> = 
 export const ENUMS: Partial<Record<keyof Tuning, readonly string[]>> = {
   scale: SCALE_NAMES,
   deathMode: DEATH_MODES,
+  register: REGISTERS,
+  arpCeiling: ARP_CEILINGS,
 };
 
 /** The first key of the player-observer group; a divider is drawn above it. */

@@ -39,11 +39,15 @@ describe('chips', () => {
     expect(diffLabel({ ...DEFAULT_TUNING })).toBe('default');
   });
 
-  it('chip keys are disjoint', () => {
-    const seen = new Set<string>();
-    for (const c of CHIPS) for (const k of Object.keys(c.diff)) {
-      expect(seen.has(k)).toBe(false);
-      seen.add(k);
+  it('chip keys are disjoint across rows; the register row may overlap anything', () => {
+    const seen = new Map<string, string>();
+    for (const c of CHIPS) {
+      if (c.row === 'register') continue;
+      for (const k of Object.keys(c.diff)) {
+        const owner = seen.get(k);
+        expect(owner === undefined || owner === (c.row ?? c.id)).toBe(true);
+        seen.set(k, c.row ?? c.id);
+      }
     }
   });
 
