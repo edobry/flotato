@@ -36,6 +36,12 @@ describe('best time storage', () => {
     }
   });
 
+  it('refuses to store what would read back as no best', () => {
+    saveBest(3);
+    for (const t of [0, -1, NaN, Infinity]) saveBest(t);
+    expect(loadBest()).toBe(3);
+  });
+
   it('clears', () => {
     saveBest(4);
     clearBest();

@@ -53,6 +53,7 @@ Read it before starting a new task.
    input, each a richer sensor for the player model.
 7. Mobile polish / PWA manifest / service worker (the crowd-facing
    prerequisites landed in mt#5173; manifest and service worker remain)
-8. localStorage best-time persistence
+8. localStorage best-time persistence: done (mt#5196). `flotato.best`, shown
+   on the start and game-over screens; the tune sheet has its own reset.
 9. Potato easter egg mode
 10. Backlog: rotation reversals, 60-second level structure, pattern authoring

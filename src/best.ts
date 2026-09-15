@@ -16,6 +16,7 @@ export function loadBest(): number {
 }
 
 export function saveBest(t: number): void {
+  if (!Number.isFinite(t) || t <= 0) return;
   try {
     localStorage.setItem(BEST_KEY, String(t));
   } catch {
