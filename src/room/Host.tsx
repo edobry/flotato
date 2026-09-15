@@ -683,9 +683,9 @@ export default function Host() {
               {view.recap ? (
                 <div style={{ marginTop: 14, fontSize: 14, lineHeight: 1.6 }}>
                   <div style={{ opacity: 0.5 }}>round {view.recap.round}</div>
-                  {view.recap.top.map((p, i) => (
+                  {view.recap.top.map((p) => (
                     <div key={p.id} style={{ color: p.color }}>
-                      #{i + 1} {p.name} · {p.time.toFixed(2)}
+                      #{p.place || 1} {p.name} · {p.time.toFixed(2)}
                     </div>
                   ))}
                 </div>

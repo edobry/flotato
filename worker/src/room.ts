@@ -6,9 +6,10 @@
 //
 // Frames are JSON text. Pad → room: join { name, id }, ready { ready },
 // dir { d }, ping. Host → room: state { round, ... } (relayed; the round is
-// kept), reset {}. Room → host: roster { players, round }, joined { player },
-// left { id }, ready { id, ready }, dir { id, d }. Room → pad: welcome { you,
-// players, state, host }, state { ... }, roster { players }, host { up }.
+// kept), reset {}, ping. Room → host: roster { players, round }, joined
+// { player }, left { id }, ready { id, ready }, dir { id, d }, pong. Room →
+// pad: welcome { you, players, state, host }, state { ... }, roster
+// { players }, host { up }, pong.
 
 import { DurableObject } from 'cloudflare:workers';
 
@@ -143,11 +144,11 @@ export class Room extends DurableObject {
     }
     if (!isObject(msg) || typeof msg.t !== 'string') return;
     const att = (ws.deserializeAttachment() as Attachment | null) ?? { role: 'pad' };
-    if (att.role === 'host') return this.fromHost(msg);
+    if (att.role === 'host') return this.fromHost(ws, msg);
     return this.fromPad(ws, att, msg);
   }
 
-  private async fromHost(msg: Record<string, unknown>): Promise<void> {
+  private async fromHost(ws: WebSocket, msg: Record<string, unknown>): Promise<void> {
     if (msg.t === 'state') {
       this.lastState = msg;
       await this.keepRound(msg.round);
@@ -158,6 +159,8 @@ export class Room extends DurableObject {
       for (const p of Object.values(players)) p.ready = false;
       await this.save();
       this.broadcast('pad', { t: 'roster', players: Object.values(players) });
+    } else if (msg.t === 'ping') {
+      this.send(ws, { t: 'pong' });
     }
   }
 
@@ -208,8 +211,18 @@ export class Room extends DurableObject {
     }
   }
 
-  async webSocketClose(ws: WebSocket): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     await this.dropped(ws);
+    // The peer closed: finish the handshake on this side, or its socket sits in CLOSING and never reconnects.
+    try {
+      ws.close(code, reason);
+    } catch {
+      try {
+        ws.close(1000, 'closed');
+      } catch {
+        /* already gone */
+      }
+    }
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {

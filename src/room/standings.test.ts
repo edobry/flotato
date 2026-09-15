@@ -12,6 +12,14 @@ describe('sortStandings', () => {
     expect(sortStandings(rows).map((r) => r.id)).toEqual(['b', 'd', 'c', 'a']);
   });
 
+  it('breaks a tie on time by place', () => {
+    const rows = [
+      { id: 'a', alive: false, time: 3.42, place: 2 },
+      { id: 'b', alive: false, time: 3.42, place: 1 },
+    ];
+    expect(sortStandings(rows).map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
   it('leaves the input untouched', () => {
     const rows = [
       { id: 'a', alive: false, time: 1 },

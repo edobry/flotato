@@ -42,7 +42,7 @@ export interface RoomState {
 }
 
 export type PadOut = { t: 'join'; name: string; id: string } | { t: 'ready'; ready: boolean } | { t: 'dir'; d: -1 | 0 | 1 } | { t: 'ping' };
-export type HostOut = RoomState | { t: 'reset' };
+export type HostOut = RoomState | { t: 'reset' } | { t: 'ping' };
 
 export type ToPad =
   | { t: 'welcome'; you: Player; players: Player[]; state: RoomState | null; host?: boolean }
@@ -56,6 +56,7 @@ export type ToPad =
 export type ToHost =
   /** On connect the room also says which round it has seen last, so a reloaded host keeps counting. */
   | { t: 'roster'; players: Player[]; round?: number }
+  | { t: 'pong' }
   | { t: 'joined' | 'rejoined'; player: Player }
   | { t: 'left'; id: string }
   | { t: 'ready'; id: string; ready: boolean }
@@ -85,10 +86,14 @@ export interface RoomSocket<Out> {
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
 const KEEPALIVE_MS = 20000;
+/** Nothing heard for this long (two missed pongs and change) and the socket is treated as dead. */
+const DEAD_AFTER_MS = KEEPALIVE_MS * 2 + 5000;
 
 /**
  * A WebSocket to the room that reconnects with backoff and pings to stay
- * awake. `onOpen` runs on every (re)connection so the caller can re-join.
+ * awake. A connection that has gone silent (a Wi-Fi drop the browser has not
+ * noticed) is abandoned and replaced rather than waited on. `onOpen` runs on
+ * every (re)connection so the caller can re-join.
  */
 export function connectRoom<In, Out>(
   code: string,
@@ -108,31 +113,45 @@ export function connectRoom<In, Out>(
     status('connecting');
     const socket = new WebSocket(roomSocketUrl(code, role));
     ws = socket;
-    socket.onopen = () => {
-      if (ws !== socket) return;
-      backoff = RECONNECT_MIN_MS;
-      status('open');
-      handlers.onOpen?.();
-      clearInterval(keepalive);
-      keepalive = window.setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN && role === 'pad') socket.send(JSON.stringify({ t: 'ping' }));
-      }, KEEPALIVE_MS);
-    };
-    socket.onmessage = (e) => {
-      if (ws !== socket || typeof e.data !== 'string') return;
-      try {
-        handlers.onMessage(JSON.parse(e.data) as In);
-      } catch {
-        /* not ours */
-      }
-    };
+    let lastHeard = Date.now();
+    // Runs once per socket: whichever of onclose or the watchdog comes first schedules the retry.
     const down = () => {
       if (ws !== socket) return;
+      ws = null;
       clearInterval(keepalive);
       status('closed');
       if (closed) return;
       retry = window.setTimeout(open, backoff);
       backoff = Math.min(RECONNECT_MAX_MS, backoff * 2);
+    };
+    socket.onopen = () => {
+      if (ws !== socket) return;
+      backoff = RECONNECT_MIN_MS;
+      lastHeard = Date.now();
+      status('open');
+      handlers.onOpen?.();
+      clearInterval(keepalive);
+      keepalive = window.setInterval(() => {
+        if (Date.now() - lastHeard > DEAD_AFTER_MS) {
+          try {
+            socket.close();
+          } catch {
+            /* already closing */
+          }
+          down();
+        } else if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ t: 'ping' }));
+        }
+      }, KEEPALIVE_MS);
+    };
+    socket.onmessage = (e) => {
+      if (ws !== socket || typeof e.data !== 'string') return;
+      lastHeard = Date.now();
+      try {
+        handlers.onMessage(JSON.parse(e.data) as In);
+      } catch {
+        /* not ours */
+      }
     };
     socket.onclose = down;
     socket.onerror = () => {
