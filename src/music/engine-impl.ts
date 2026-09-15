@@ -332,11 +332,14 @@ export function createEngineImpl(initial: Tuning, audio: AudioContext | null = n
     // for the life of the page, ~35 events a run, and every tick's binary
     // search would grow with them. cancelScheduledValues(0) followed by
     // setValueAtTime(_, 0) is how Tone's own TickParam.multiplier setter resets
-    // the timeline. It is safe here because the stop above put a tick offset at
-    // `now`: from the restart on, the Transport measures ticks as differences
-    // of the tempo integral over times after that offset, so the discarded
-    // history is never read. The steps stepTempo adds after `now` are the same
-    // setValueAtTime events as before (mt#5172).
+    // the timeline (Tone 15.1.22, core/clock/TickParam.js). It is safe here
+    // because the stop above put a tick offset at `now`: from the restart on,
+    // the Transport measures ticks as differences of the tempo integral over
+    // times after that offset, so the discarded history is never read, and the
+    // value at `now` is the floor exactly as the old setValueAtTime(floor, now)
+    // made it. The bound is per start: a run still accrues its own steps (the
+    // same setValueAtTime events as before, mt#5172) and the death ramp, and
+    // the next start wipes them.
     t.bpm.cancelScheduledValues(0);
     t.bpm.setValueAtTime(tuning.bpmFloor, 0);
     lastBpmTarget = tuning.bpmFloor;
