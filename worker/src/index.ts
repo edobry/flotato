@@ -13,11 +13,18 @@ import {
   type StatsRow,
 } from './lib';
 
+import { Room } from './room';
+
+export { Room };
+
 export interface Env {
   DB: D1Database;
+  ROOM: DurableObjectNamespace<Room>;
   /** The site origin allowed to call this Worker, e.g. https://edobry.github.io. */
   SITE_ORIGIN: string;
 }
+
+const ROOM_CODE = /^[a-z0-9-]{1,32}$/;
 
 const HOUR_MS = 3600 * 1000;
 
@@ -121,10 +128,18 @@ export default {
     const headers = cors(request, env);
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    // /room/<code>/ws: pads and the host meet in the room's Durable Object.
+    const room = url.pathname.match(/^\/room\/([^/]+)\/ws$/);
+    if (room) {
+      const code = decodeURIComponent(room[1]).toLowerCase();
+      if (!ROOM_CODE.test(code)) return json({ error: 'bad room code' }, 400, headers);
+      if (request.headers.get('Upgrade') !== 'websocket') return json({ error: 'expected websocket' }, 426, headers);
+      return env.ROOM.get(env.ROOM.idFromName(code)).fetch(request);
+    }
     try {
       if (request.method === 'POST' && url.pathname === '/run') return await postRun(request, env, headers);
       if (request.method === 'GET' && url.pathname === '/board') return await getBoard(request, env, headers);
-      if (request.method === 'GET' && url.pathname === '/') return json({ ok: true, routes: ['POST /run', 'GET /board'] }, 200, headers);
+      if (request.method === 'GET' && url.pathname === '/') return json({ ok: true, routes: ['POST /run', 'GET /board', 'WS /room/<code>/ws?role=pad|host'] }, 200, headers);
     } catch (err) {
       console.error(err);
       return json({ error: 'internal' }, 500, headers);
