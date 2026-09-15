@@ -1,9 +1,10 @@
 // The room's view of Flotato, meant for a projector: a QR code to play, the
 // top runs, what just happened, and the room's numbers. Polls the board
-// Worker; no interaction needed.
+// Worker; no interaction needed. `?view=stats` swaps in the analytics view.
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { BOARD_URL, PLAY_URL } from '../config';
+import Stats from './Stats';
 
 const POLL_MS = 3000;
 const QR_SRC = import.meta.env.BASE_URL + 'qr.svg';
@@ -16,7 +17,7 @@ interface Entry {
   at: number;
 }
 
-interface Stats {
+interface RoomStats {
   runs: number;
   devices: number;
   best: number | null;
@@ -29,7 +30,15 @@ interface BoardData {
   hours: number;
   top: Entry[];
   feed: Entry[];
-  stats: Stats;
+  stats: RoomStats;
+}
+
+function readView(): string {
+  try {
+    return new URLSearchParams(location.search).get('view') ?? '';
+  } catch {
+    return '';
+  }
 }
 
 function readParams(): { limit: number; hours: number } {
@@ -68,6 +77,10 @@ const ago = (at: number, now: number) => {
 const pct = (n: number, total: number) => (total ? Math.round((100 * n) / total) + '%' : DASH);
 
 export default function Board() {
+  return readView() === 'stats' ? <Stats /> : <RoomBoard />;
+}
+
+function RoomBoard() {
   const [data, setData] = useState<BoardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
