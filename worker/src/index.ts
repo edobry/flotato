@@ -14,6 +14,7 @@ import {
   parseBoardQuery,
   parseRun,
   parseStatsQuery,
+  statsQueryKey,
   type RunRow,
   type StatsRow,
   type VariantRow,
@@ -138,7 +139,7 @@ async function getBoard(request: Request, env: Env, headers: Record<string, stri
 
 async function getStats(request: Request, env: Env, headers: Record<string, string>): Promise<Response> {
   const query = parseStatsQuery(new URL(request.url).searchParams);
-  const key = JSON.stringify(query);
+  const key = statsQueryKey(query);
   const now = Date.now();
   const cacheControl = `public, max-age=${STATS_CACHE_MS / 1000}`;
   const hit = statsCache.get(key);

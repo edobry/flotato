@@ -195,6 +195,12 @@ export interface StatsQuery {
   since: { kind: 'timestamp'; at: number } | { kind: 'build'; build: string } | null;
 }
 
+/** A cache key that depends on the query's values, not on the object's field order. */
+export function statsQueryKey(q: StatsQuery): string {
+  const since = q.since === null ? '' : q.since.kind === 'timestamp' ? 't' + q.since.at : 'b' + q.since.build;
+  return [q.hours ?? '', q.variant ?? '', since].join('|');
+}
+
 /**
  * Parses /stats parameters. `hours` clamps like the board's; `since` is a ms
  * timestamp (all digits) or a build id. A marker replaces the default window;
@@ -211,13 +217,13 @@ export function parseStatsQuery(params: URLSearchParams): StatsQuery {
   return { hours, variant, since };
 }
 
-/** The columns /stats reads per run. */
+/** The columns /stats reads per run; `death` is a class because parseRun admits nothing else into the table. */
 export interface VariantRow {
   variant: string;
   slot: string;
   device: string;
   time: number;
-  death: string;
+  death: DeathClass;
   reaction_median: number | null;
   reaction_p90: number | null;
   anticipation: number | null;

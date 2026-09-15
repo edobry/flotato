@@ -9,6 +9,7 @@ import { BOARD_URL } from '../config';
 const POLL_MS = 30000;
 const DASH = '—';
 const PASS_THROUGH = ['hours', 'since', 'variant'] as const;
+/** The classes of worker/src/lib.ts DEATH_CLASSES in the board's order (the common ones first), as the room view lists them. */
 const DEATH_ORDER = ['late', 'freeze', 'overshoot', 'jitter', 'wrong way'] as const;
 const DEATH_COLOR: Record<string, string> = {
   late: 'hsl(195, 85%, 62%)',
@@ -146,6 +147,8 @@ export default function Stats() {
   }, []);
 
   const totalRuns = data?.groups.reduce((n, g) => n + g.runs, 0) ?? 0;
+  // Rows are (variant, slot) groups; the headline counts distinct variants.
+  const variants = new Set(data?.groups.map((g) => g.variant)).size;
   const label = data ? windowLabel(data) : '';
 
   return (
@@ -155,7 +158,7 @@ export default function Stats() {
         <div style={subline}>
           {label}
           {label ? ' · ' : ''}
-          {totalRuns} RUNS · {data.groups.length} VARIANTS
+          {totalRuns} RUNS · {variants} VARIANTS
           {data.truncated ? ` · FIRST ${data.rows} ROWS ONLY` : ''}
         </div>
       )}

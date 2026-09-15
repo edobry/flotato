@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STATS_MAX_ROWS, allowOrigin, computeStats, computeVariantStats, median, normalizeTag, parseBoardQuery, parseRun, parseStatsQuery, percentile } from './lib';
+import { STATS_MAX_ROWS, allowOrigin, computeStats, computeVariantStats, median, normalizeTag, parseBoardQuery, parseRun, parseStatsQuery, percentile, statsQueryKey } from './lib';
 
 const summary = {
   time: 23.41,
@@ -143,6 +143,13 @@ describe('parseStatsQuery', () => {
     expect(parseStatsQuery(new URLSearchParams('since=%20'))).toEqual({ hours: 12, variant: null, since: null });
     expect(parseStatsQuery(new URLSearchParams('since=' + 'x'.repeat(100))).since).toEqual({ kind: 'build', build: 'x'.repeat(64) });
   });
+
+  it('keys the cache by values', () => {
+    expect(statsQueryKey(parseStatsQuery(new URLSearchParams('')))).toBe('12||');
+    expect(statsQueryKey(parseStatsQuery(new URLSearchParams('since=9178ffc&variant=x')))).toBe('|x|b9178ffc');
+    expect(statsQueryKey(parseStatsQuery(new URLSearchParams('since=1757900000000&hours=2')))).toBe('2||t1757900000000');
+    expect(statsQueryKey({ since: null, variant: null, hours: 12 })).toBe(statsQueryKey({ hours: 12, variant: null, since: null }));
+  });
 });
 
 describe('computeVariantStats', () => {
@@ -151,7 +158,7 @@ describe('computeVariantStats', () => {
     slot: '',
     device: 'a',
     time: 10,
-    death: 'late',
+    death: 'late' as const,
     reaction_median: null,
     reaction_p90: null,
     anticipation: null,
