@@ -43,8 +43,14 @@ Read it before starting a new task.
    done (mt#5178). Runs POST to a Cloudflare Worker + D1 (`worker/`); the
    `/board/` page is the room's view. Its rows are the first real dataset
    for Phases 1 and 2.
-6. Mobile polish / PWA manifest / service worker (the crowd-facing
+6. The room round for the demo: done (mt#5180). `/room/` on the projector
+   runs one shared field; `/pad/` on phones joins with a name, gets a
+   cellular-automaton glyph, and sends hold-left/right through a Durable
+   Object relay. Deferred by it: the single-player staged entry (mt#5176),
+   since the lobby is the staged entry. Later modes floated: tilt and body
+   input, each a richer sensor for the player model.
+7. Mobile polish / PWA manifest / service worker (the crowd-facing
    prerequisites landed in mt#5173; manifest and service worker remain)
-7. localStorage best-time persistence
-8. Potato easter egg mode
-9. Backlog: rotation reversals, 60-second level structure, pattern authoring
+8. localStorage best-time persistence
+9. Potato easter egg mode
+10. Backlog: rotation reversals, 60-second level structure, pattern authoring

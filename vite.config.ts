@@ -11,7 +11,7 @@ export default defineConfig({
   define: { __BUILD__: JSON.stringify((process.env.GITHUB_SHA ?? 'dev').slice(0, 7)) },
   build: {
     rollupOptions: {
-      input: { main: 'index.html', board: 'board/index.html' },
+      input: { main: 'index.html', board: 'board/index.html', pad: 'pad/index.html', room: 'room/index.html' },
     },
   },
   test: {
