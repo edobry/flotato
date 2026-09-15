@@ -233,8 +233,9 @@ export default function Flotato() {
     let dangerPeakSec = -1;
     // Ghost mode is a tune-mode affordance only: the knob persists, but a plain URL never honours it.
     const ghostOn = () => tuneModeRef.current && tuningRef.current.ghost;
-    // A run that started in ghost mode never sets a best or logs, even if ghost is turned off mid-run.
+    // A run that started in ghost mode never sets a best or logs. Turning ghost off mid-run ends the run.
     let runGhost = false;
+    let ghostWas = false;
 
     // Count-in: beats of audible Transport before the first wall. Measured as
     // beat phase travelled once the Transport starts (absorbing the engine load
@@ -294,6 +295,7 @@ export default function Flotato() {
       dangerPeakT = -1;
       dangerPeakSec = -1;
       runGhost = ghostOn();
+      ghostWas = runGhost;
       slotRef.current = which;
       setSlot(which);
       setFinalTime(0);
@@ -510,6 +512,13 @@ export default function Flotato() {
 
       if (phaseRef.current !== 'playing' || s.dead) return;
 
+      const ghost = ghostOn();
+      if (ghostWas && !ghost) {
+        endRun(false);
+        return;
+      }
+      ghostWas = ghost;
+
       const dir = input.direction();
       s.playerA += dir * PLAYER_SPEED * dt;
 
@@ -574,8 +583,8 @@ export default function Flotato() {
         dangerPeakT = s.time;
         dangerPeakSec = sec;
       } else if (danger < 0.15 && dangerPeakT >= 0) {
-        // Only a move to another lane threads a gap; in ghost mode a wall also clears by passing through.
-        if (s.time - dangerPeakT < 0.35 && sec !== dangerPeakSec) music.thread();
+        // In ghost mode a wall also clears by passing through, which is not a threaded gap.
+        if (s.time - dangerPeakT < 0.35 && (!ghost || sec !== dangerPeakSec)) music.thread();
         dangerPeakT = -1;
       }
       snap.t = s.time;
@@ -589,7 +598,7 @@ export default function Flotato() {
       observer.frame(snap, beatPhase);
 
       // collision; in ghost mode walls pass through and keep sounding
-      if (ghostOn()) return;
+      if (ghost) return;
       for (let i = 0; i < s.walls.length; i++) {
         const wl = s.walls[i];
         if (

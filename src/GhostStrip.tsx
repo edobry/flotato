@@ -8,8 +8,9 @@ interface Props {
   onStop: () => void;
 }
 
-/** Knobs worth turning while a ghost run plays; the rest live on the sheet. */
-const LIVE_KEYS = (Object.keys(DEFAULT_TUNING) as (keyof Tuning)[]).filter((k) => k !== 'ghost' && k !== 'runStats' && k !== 'dangerOnset');
+/** Knobs audible mid-run; start-time, visual and observer knobs live on the sheet. */
+const OFF_STRIP: (keyof Tuning)[] = ['ghost', 'runStats', 'dangerOnset', 'beatPulse', 'beatOffsetMs', 'countInBars', 'randomStartOffset', 'milestones'];
+const LIVE_KEYS = (Object.keys(DEFAULT_TUNING) as (keyof Tuning)[]).filter((k) => !OFF_STRIP.includes(k));
 
 /** During a ghost run on a phone: one knob at a time along the bottom edge; the canvas above stays the controller. */
 export default function GhostStrip({ tuning, onChange, onStop }: Props) {

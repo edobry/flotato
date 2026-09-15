@@ -29,10 +29,13 @@ function copy(text: string, done: (ok: boolean) => void) {
 /** Between runs: chips, the A/B pair, every knob at thumb size, and the run log. */
 export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot, runs, onClearRuns, onPlay, onClose }: Props) {
   const [copied, setCopied] = useState<'' | 'link' | 'json' | 'fail'>('');
+  // When the clipboard is unavailable (no secure context, permission denied), show the text to select by hand.
+  const [fallback, setFallback] = useState('');
   const keys = Object.keys(DEFAULT_TUNING) as (keyof Tuning)[];
   const groups = groupRuns(runs);
-  const flash = (what: 'link' | 'json') => (ok: boolean) => {
+  const flash = (what: 'link' | 'json', text: string) => (ok: boolean) => {
     setCopied(ok ? what : 'fail');
+    setFallback(ok ? '' : text);
     setTimeout(() => setCopied(''), 1500);
   };
   const slotRow = (name: 'A' | 'B') => {
@@ -73,7 +76,14 @@ export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot,
       <div className="diffline">
         <code>{diffLabel(tuning)}</code>
         <span style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button type="button" className="btn" onClick={() => copy(tuneLink(tuning, location.href), flash('link'))}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              const link = tuneLink(tuning, location.href);
+              copy(link, flash('link', link));
+            }}
+          >
             {copied === 'link' ? 'copied' : copied === 'fail' ? 'copy failed' : 'copy link'}
           </button>
           <button type="button" className="btn" onClick={onReset}>
@@ -123,7 +133,15 @@ export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot,
           </table>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          <button type="button" className="btn" disabled={runs.length === 0} onClick={() => copy(JSON.stringify(runs), flash('json'))}>
+          <button
+            type="button"
+            className="btn"
+            disabled={runs.length === 0}
+            onClick={() => {
+              const json = JSON.stringify(runs);
+              copy(json, flash('json', json));
+            }}
+          >
             {copied === 'json' ? 'copied' : 'copy JSON'}
           </button>
           <button type="button" className="btn" disabled={runs.length === 0} onClick={onClearRuns}>
@@ -131,6 +149,8 @@ export default function TuneSheet({ tuning, onChange, onReset, slots, onSetSlot,
           </button>
         </div>
       </div>
+
+      {fallback && <input className="fallback" readOnly value={fallback} onFocus={(e) => e.target.select()} />}
 
       <div className="sheet-foot">
         <button type="button" className="btn primary" onClick={() => onPlay('')}>
