@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { STATS_MAX_ROWS, allowOrigin, computeStats, computeVariantStats, median, normalizeTag, parseBoardQuery, parseRun, parseStatsQuery, percentile, statsQueryKey } from './lib';
+import {
+  STATS_MAX_ROWS,
+  allowOrigin,
+  computeStats,
+  computeVariantStats,
+  encodeStoredDiff,
+  median,
+  normalizeTag,
+  parseBoardQuery,
+  parsePref,
+  parseRun,
+  parseStatsQuery,
+  percentile,
+  statsQueryKey,
+  summarizePrefs,
+} from './lib';
 
 const summary = {
   time: 23.41,
@@ -209,6 +224,71 @@ describe('computeVariantStats', () => {
     ]);
     expect(computeVariantStats([])).toEqual([]);
     expect(STATS_MAX_ROWS).toBeGreaterThan(0);
+  });
+});
+
+describe('parsePref', () => {
+  it('reads a verdict row', () => {
+    expect(parsePref({ device: 'd1', build: 'abc', step: 'tempo-up', verdict: 'B', base: { bpmFloor: 140, bpmCeil: 150 } })).toEqual({
+      row: { device: 'd1', build: 'abc', step: 'tempo-up', verdict: 'B', base: '{"bpmFloor":140,"bpmCeil":150}', final: null },
+    });
+  });
+
+  it('reads a finished-walk row', () => {
+    expect(parsePref({ device: 'd1', final: {} })).toEqual({ row: { device: 'd1', build: '', step: null, verdict: null, base: null, final: '{}' } });
+  });
+
+  it('refuses what is neither, and mixes', () => {
+    expect(parsePref(null)).toEqual({ error: 'body must be an object' });
+    expect(parsePref({ step: 'x', verdict: 'A', base: {} })).toEqual({ error: 'device is required' });
+    expect(parsePref({ device: 'd1' })).toEqual({ error: 'step or final is required' });
+    expect(parsePref({ device: 'd1', step: 'x', verdict: 'C', base: {} })).toEqual({ error: 'verdict must be A, B, same or skip' });
+    expect(parsePref({ device: 'd1', step: 'x', verdict: 'A', base: 'nope' })).toEqual({ error: 'base must be an object' });
+    expect(parsePref({ device: 'd1', step: 'x', verdict: 'A', base: {}, final: {} })).toEqual({ error: 'final and step are exclusive' });
+  });
+
+  it('bounds strings and empties oversized diffs', () => {
+    const parsed = parsePref({ device: 'x'.repeat(500), step: 's'.repeat(500), verdict: 'skip', base: { pad: 'y'.repeat(5000) } });
+    if (!('row' in parsed)) throw new Error(parsed.error);
+    expect(parsed.row.device).toHaveLength(64);
+    expect(parsed.row.step).toHaveLength(64);
+    expect(parsed.row.base).toBe('{}');
+  });
+});
+
+describe('prefs summary', () => {
+  it('encodes stored diffs as tune strings with sorted keys', () => {
+    expect(encodeStoredDiff('{"scale":"wholeTone","bpmFloor":140}')).toBe('bpmFloor=140,scale=wholeTone');
+    expect(encodeStoredDiff('{}')).toBe('default');
+    expect(encodeStoredDiff(null)).toBe('default');
+    expect(encodeStoredDiff('not json')).toBe('default');
+  });
+
+  it('counts three verdicts on three steps once each, and ranks finals', () => {
+    const rows = [
+      { step: 'register', verdict: 'A', final: null },
+      { step: 'tempo-up', verdict: 'B', final: null },
+      { step: 'tempo-up-2', verdict: 'same', final: null },
+      { step: 'tempo-up', verdict: 'skip', final: null },
+      { step: null, verdict: null, final: '{"bpmFloor":140,"bpmCeil":150}' },
+      { step: null, verdict: null, final: '{"bpmCeil":150,"bpmFloor":140}' },
+      { step: null, verdict: null, final: '{}' },
+      { step: 'ghost', verdict: 'maybe', final: null },
+    ];
+    expect(summarizePrefs(rows)).toEqual({
+      verdicts: 4,
+      walks: 3,
+      steps: [
+        { id: 'tempo-up', A: 0, B: 1, same: 0, skip: 1, n: 2 },
+        { id: 'register', A: 1, B: 0, same: 0, skip: 0, n: 1 },
+        { id: 'tempo-up-2', A: 0, B: 0, same: 1, skip: 0, n: 1 },
+      ],
+      finals: [
+        { diff: 'bpmCeil=150,bpmFloor=140', n: 2 },
+        { diff: 'default', n: 1 },
+      ],
+    });
+    expect(summarizePrefs([])).toEqual({ verdicts: 0, walks: 0, steps: [], finals: [] });
   });
 });
 

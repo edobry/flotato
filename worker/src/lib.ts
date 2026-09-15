@@ -19,6 +19,14 @@ export const STATS_CACHE_MS = 30 * 1000;
 export const DEATH_CLASSES = ['jitter', 'overshoot', 'wrong way', 'freeze', 'late'] as const;
 export type DeathClass = (typeof DEATH_CLASSES)[number];
 
+/** The guided listen's answers, mirroring src/tuning/guide.ts Verdict. */
+export const VERDICTS = ['A', 'B', 'same', 'skip'] as const;
+export type Verdict = (typeof VERDICTS)[number];
+/** A tuning diff serialized into a row; longer ones are stored empty rather than refused. */
+export const MAX_DIFF_JSON = 4096;
+/** How many finals the prefs summary ranks. */
+export const TOP_FINALS = 5;
+
 /** Tags a room full of people should not see on a projector. Uppercase, exact. */
 const TAG_BLOCKLIST = new Set(['ASS', 'FAG', 'FUK', 'FUC', 'KKK', 'CUM', 'DIE', 'NIG', 'SEX', 'TIT', 'COK', 'JEW', 'GAY']);
 
@@ -55,6 +63,12 @@ const count = (x: unknown): number => (finite(x) && x >= 0 ? Math.floor(x) : 0);
 const metric = (x: unknown, n: number): number | null => (n > 0 && finite(x) ? x : null);
 const str = (x: unknown, fallback = ''): string => (typeof x === 'string' ? x.slice(0, MAX_STRING) : fallback);
 
+/** An object as bounded JSON; over the bound it is stored as empty, so the row is kept and the diff is not. */
+const diffJson = (x: Json): string => {
+  const json = JSON.stringify(x);
+  return json.length > MAX_DIFF_JSON ? '{}' : json;
+};
+
 /** Uppercase alphanumerics, at most three; empty or blocked tags get a neutral replacement. */
 export function normalizeTag(raw: unknown): string {
   const tag = String(raw ?? '')
@@ -86,11 +100,7 @@ export function parseRun(body: unknown): { row: RunRow } | { error: string } {
   const beatN = count(beat.n);
   const countInOnsets = countIn ? count(countIn.onsets) : null;
 
-  let tuning = '{}';
-  if (isObject(body.tuning)) {
-    tuning = JSON.stringify(body.tuning);
-    if (tuning.length > 4096) tuning = '{}';
-  }
+  const tuning = isObject(body.tuning) ? diffJson(body.tuning) : '{}';
 
   return {
     row: {
@@ -297,6 +307,104 @@ export function computeVariantStats(rows: VariantRow[]): VariantStats[] {
   }
   out.sort((a, b) => b.runs - a.runs || a.variant.localeCompare(b.variant) || a.slot.localeCompare(b.slot));
   return out;
+}
+
+/** A guided-listen row: a verdict on one step, or a finished walk's discovered diff. */
+export interface PrefRow {
+  device: string;
+  build: string;
+  step: string | null;
+  verdict: Verdict | null;
+  base: string | null;
+  final: string | null;
+}
+
+/** Parses a POST /prefs body: `{ device, step, verdict, base }` per verdict or `{ device, final }` per finished walk. */
+export function parsePref(body: unknown): { row: PrefRow } | { error: string } {
+  if (!isObject(body)) return { error: 'body must be an object' };
+  const device = str(body.device);
+  if (!device) return { error: 'device is required' };
+  const build = str(body.build);
+  if (isObject(body.final)) {
+    if (body.step !== undefined || body.verdict !== undefined) return { error: 'final and step are exclusive' };
+    return { row: { device, build, step: null, verdict: null, base: null, final: diffJson(body.final) } };
+  }
+  const step = str(body.step);
+  if (!step) return { error: 'step or final is required' };
+  const verdict = typeof body.verdict === 'string' && (VERDICTS as readonly string[]).includes(body.verdict) ? (body.verdict as Verdict) : null;
+  if (!verdict) return { error: 'verdict must be A, B, same or skip' };
+  if (!isObject(body.base)) return { error: 'base must be an object' };
+  return { row: { device, build, step, verdict, base: diffJson(body.base), final: null } };
+}
+
+/** The columns the prefs summary reads per row. */
+export interface PrefSummaryRow {
+  step: string | null;
+  verdict: string | null;
+  final: string | null;
+}
+
+export interface StepSummary {
+  id: string;
+  A: number;
+  B: number;
+  same: number;
+  skip: number;
+  n: number;
+}
+
+export interface PrefsSummary {
+  verdicts: number;
+  walks: number;
+  steps: StepSummary[];
+  /** The most common discovered diffs, encoded as `?tune=` strings, with counts. */
+  finals: { diff: string; n: number }[];
+}
+
+/** A stored diff as the `key=value,…` string the game reads, keys sorted so equal diffs compare equal; `default` when empty. */
+export function encodeStoredDiff(json: string | null): string {
+  let parsed: unknown = null;
+  try {
+    parsed = json === null ? null : JSON.parse(json);
+  } catch {
+    parsed = null;
+  }
+  if (!isObject(parsed)) return 'default';
+  const keys = Object.keys(parsed).sort();
+  return keys.length ? keys.map((k) => k + '=' + String(parsed[k])).join(',') : 'default';
+}
+
+/** Per step, how the verdicts split; plus how many walks finished and on which diffs. */
+export function summarizePrefs(rows: PrefSummaryRow[]): PrefsSummary {
+  const steps = new Map<string, StepSummary>();
+  const finals = new Map<string, number>();
+  let verdicts = 0;
+  let walks = 0;
+  for (const r of rows) {
+    if (r.step !== null && r.verdict !== null && (VERDICTS as readonly string[]).includes(r.verdict)) {
+      verdicts++;
+      let s = steps.get(r.step);
+      if (!s) {
+        s = { id: r.step, A: 0, B: 0, same: 0, skip: 0, n: 0 };
+        steps.set(r.step, s);
+      }
+      s[r.verdict as Verdict]++;
+      s.n++;
+    } else if (r.final !== null) {
+      walks++;
+      const diff = encodeStoredDiff(r.final);
+      finals.set(diff, (finals.get(diff) ?? 0) + 1);
+    }
+  }
+  return {
+    verdicts,
+    walks,
+    steps: [...steps.values()].sort((a, b) => b.n - a.n || a.id.localeCompare(b.id)),
+    finals: [...finals.entries()]
+      .map(([diff, n]) => ({ diff, n }))
+      .sort((a, b) => b.n - a.n || a.diff.localeCompare(b.diff))
+      .slice(0, TOP_FINALS),
+  };
 }
 
 /** The browser origins allowed to read and write: the Pages site, and local dev servers. */
