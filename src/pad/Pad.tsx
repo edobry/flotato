@@ -56,6 +56,30 @@ function saveName(name: string): void {
   }
 }
 
+/** True while the phone is taller than wide; the pad wants to be held like a gamepad. */
+function isPortrait(): boolean {
+  try {
+    return window.matchMedia('(orientation: portrait)').matches;
+  } catch {
+    return window.innerHeight > window.innerWidth;
+  }
+}
+
+/**
+ * Ask for landscape where the platform allows it (Android Chrome, in
+ * fullscreen, from a gesture). iOS Safari has no lock; the hint does the job there.
+ */
+async function requestLandscape(): Promise<void> {
+  try {
+    const el = document.documentElement as HTMLElement & { requestFullscreen?: () => Promise<void> };
+    if (el.requestFullscreen && !document.fullscreenElement) await el.requestFullscreen();
+    const o = screen.orientation as ScreenOrientation & { lock?: (t: string) => Promise<void> };
+    if (o?.lock) await o.lock('landscape');
+  } catch {
+    /* not supported or refused: the rotate hint covers it */
+  }
+}
+
 function vibrate(pattern: number | number[]): void {
   try {
     navigator.vibrate?.(pattern);
@@ -83,6 +107,16 @@ const page: CSSProperties = {
 };
 
 const big: CSSProperties = { fontSize: 30, fontWeight: 800, letterSpacing: 5 };
+const hintStyle: CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 'max(18px, env(safe-area-inset-bottom))',
+  fontSize: 13,
+  letterSpacing: 2,
+  opacity: 0.55,
+  pointerEvents: 'none',
+};
 const dim: CSSProperties = { fontSize: 14, opacity: 0.6, lineHeight: 1.5 };
 const button: CSSProperties = {
   font: 'inherit',
@@ -128,6 +162,32 @@ export default function Pad() {
   const screenRef = useRef<Screen>('enter');
   const lastDir = useRef<-1 | 0 | 1>(0);
   const inputRef = useRef(createInput());
+  const [portrait, setPortrait] = useState(isPortrait);
+
+  useEffect(() => {
+    // Older iOS Safari only has addListener on MediaQueryList; resize covers everything else.
+    const onChange = () => setPortrait(isPortrait());
+    let mq: (MediaQueryList & { addListener?: (cb: () => void) => void; removeListener?: (cb: () => void) => void }) | null = null;
+    try {
+      mq = window.matchMedia('(orientation: portrait)');
+    } catch {
+      mq = null;
+    }
+    if (mq) {
+      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+      else mq.addListener?.(onChange);
+    }
+    window.addEventListener('resize', onChange);
+    window.addEventListener('orientationchange', onChange);
+    return () => {
+      if (mq) {
+        if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange);
+        else mq.removeListener?.(onChange);
+      }
+      window.removeEventListener('resize', onChange);
+      window.removeEventListener('orientationchange', onChange);
+    };
+  }, []);
 
   useEffect(() => {
     nameRef.current = name;
@@ -168,6 +228,7 @@ export default function Pad() {
     setError(null);
     joinedRef.current = true;
     setScreen('lobby');
+    void requestLandscape();
     if (sockRef.current) {
       sockRef.current.send({ t: 'join', name: n, id });
       return;
@@ -305,6 +366,8 @@ export default function Pad() {
   }
 
   const face = <div style={{ height: 96 }} dangerouslySetInnerHTML={{ __html: trimmed ? glyphSvg(trimmed, 96, color) : '' }} />;
+  // The pad is a gamepad: held sideways, a thumb on each end. Nothing stops portrait play; the hint just nudges.
+  const rotateHint = portrait ? <div style={hintStyle}>⟳ turn your phone sideways</div> : null;
 
   if (screen === 'lobby') {
     const ready = you?.ready ?? false;
@@ -325,6 +388,7 @@ export default function Pad() {
         </button>
         <div style={dim}>{link ?? 'watch the screen'}</div>
         {error && <div style={{ ...dim, color: '#ff8a8a' }}>{error}</div>}
+        {rotateHint}
       </div>
     );
   }
@@ -335,6 +399,7 @@ export default function Pad() {
         {face}
         <div style={{ ...big, color }}>{state ? Math.ceil(state.countdown) : ''}</div>
         <div style={dim}>hold left or right · eyes on the screen</div>
+        {rotateHint}
       </div>
     );
   }
@@ -346,9 +411,18 @@ export default function Pad() {
           ‹
         </div>
         <div style={{ flex: 1, height: '100%', display: 'grid', placeItems: 'center', fontSize: 64, opacity: 0.35 }}>›</div>
-        <div style={{ position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', left: 0, right: 0, pointerEvents: 'none' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 'max(16px, env(safe-area-inset-top))',
+            left: 'env(safe-area-inset-left)',
+            right: 'env(safe-area-inset-right)',
+            pointerEvents: 'none',
+          }}
+        >
           <div style={{ ...dim, color }}>{you?.name}</div>
         </div>
+        {rotateHint}
       </div>
     );
   }
